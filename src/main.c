@@ -76,7 +76,7 @@ int act_auth (char **argv, int argc) {
   }
 
   if (verbosity >= 1) {
-    printf ("Answer parsed");
+    printf ("Answer parsed\n");
   }
 
   if (json_object_get (ans, "error")) {
