@@ -6,6 +6,7 @@
 
 
 #include <curl/curl.h>
+#include <jansson.h>
 
 
 #define CLIENT_ID 2870218
@@ -19,11 +20,12 @@ char buf[BUF_SIZE];
 int buf_ptr;
 
 size_t save_to_buff (char *ptr, size_t size, size_t nmemb, void *userdata) {
-  if (buf_ptr + size * nmemb > BUF_SIZE) {
+  if (buf_ptr + size * nmemb >= BUF_SIZE) {
     return 0;
   }
   memcpy (buf + buf_ptr, ptr, size * nmemb);
   buf_ptr += nmemb * size;
+  buf[buf_ptr] = 0;
   return nmemb * size;
 }
 
@@ -63,10 +65,29 @@ int act_auth (char **argv, int argc) {
   
   query_perform ();
 
-  if (verbosity) {
-    buf[buf_ptr ++] = 0;
+  if (verbosity >= 1) {
     printf ("%s\n", buf);
   }
+
+  json_error_t *error = 0;
+  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
+  if (!ans) {
+    exit (4);
+  }
+
+  if (verbosity >= 1) {
+    printf ("Answer parsed");
+  }
+
+  if (json_object_get (ans, "error")) {
+    exit (5);
+  }
+
+  if (!json_object_get (ans, "access_token")) {
+    exit (5);
+  }
+
+  printf ("%s\n", json_string_value (json_object_get (ans, "access_token")));
   return 0; 
 }
 
