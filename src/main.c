@@ -20,6 +20,8 @@
 #define ERROR_UNEXPECTED_ANSWER 5
 #define ERROR_NO_ACCESS_TOKEN 6
 
+#define MAX_MESSAGE_LEN 1000
+
 int verbosity;
 
 #define BUF_SIZE (1 << 23)
@@ -231,8 +233,69 @@ int act_msg_read (char **argv, int argc) {
   return 0; 
 }
 
+void usage_msg_send (void) {
+  printf ("vkconcli msg send <recipient_id>\n");
+  exit (ERROR_COMMAND_LINE);
+}
+
+char *read_msg (void) {
+  static char msg_buf[MAX_MESSAGE_LEN + 100];
+  int cur_len = 0;
+  msg_buf[0] = 0;
+  while (!feof (stdin) && cur_len < MAX_MESSAGE_LEN) {
+    msg_buf[cur_len ++] = fgetc (stdin);
+    if (msg_buf[cur_len - 1] == -1) {
+      cur_len --;
+    }  
+  }
+  msg_buf[cur_len] = 0;
+  return msg_buf;
+}
+
+int act_msg_send (char **argv, int argc) {
+  if (argc != 1) {
+    usage_msg_read ();
+  }
+  int id = atoi (*argv);
+
+  
+  static char query[10001];
+  char *q = curl_easy_escape (curl_handle, read_msg (), 0);
+  snprintf (query, 10000, "https://api.vk.com/method/messages.send?uid=%d&message=%s&access_token=%s", id, q, get_access_token ());
+  //printf ("%s\n", query);
+  curl_free (q);
+  set_curl_url (query);
+  
+  query_perform ();
+
+  if (verbosity >= 1) {
+    printf ("%s\n", buf);
+  }
+
+  json_error_t *error = 0;
+  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
+  if (!ans) {
+    exit (ERROR_PARSE_ANSWER);
+  }
+
+  if (verbosity >= 1) {
+    printf ("Answer parsed\n");
+  }
+
+  if (json_object_get (ans, "error")) {
+    exit (ERROR_UNEXPECTED_ANSWER);
+  }
+
+  if (!json_object_get (ans, "response")) {
+    exit (ERROR_UNEXPECTED_ANSWER);
+  }
+
+  /*print_messages (json_object_get (ans, "response"));*/
+  return 0; 
+}
+
 void usage_msg (void) {
-  printf ("vkconcli msg [read, send]\n");
+  printf ("vkconcli msg [read | send]\n");
   exit (ERROR_COMMAND_LINE);
 }
 
@@ -242,6 +305,9 @@ int act_msg (char **argv, int argc) {
   }
   if (!strcmp (argv[0], "read")) {
     return act_msg_read (argv + 1, argc - 1);
+  }
+  if (!strcmp (argv[0], "send")) {
+    return act_msg_send (argv + 1, argc - 1);
   }
   usage_msg ();
   return 0; 
