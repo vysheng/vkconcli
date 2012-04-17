@@ -13,6 +13,13 @@
 #define CLIENT_ID_STR "2870218"
 #define CLIENT_SECRET "R9hl0gmUCVAEqYHOYYtu"
 
+#define ERROR_COMMAND_LINE 1
+#define ERROR_CURL_INIT 2
+#define ERROR_NET 3
+#define ERROR_PARSE_ANSWER 4
+#define ERROR_UNEXPECTED_ANSWER 5
+#define ERROR_NO_ACCESS_TOKEN 6
+
 int verbosity;
 
 #define BUF_SIZE (1 << 23)
@@ -21,12 +28,14 @@ int buf_ptr;
 int limit;
 int offset;
 char *access_token;
+int reverse;
+
 
 char *get_access_token (void) {
   if (!access_token) {
     access_token = getenv ("vk_access_token");
     if (!access_token) {
-      exit (6);
+      exit (ERROR_NO_ACCESS_TOKEN);
     }
     access_token = strdup (access_token);
   }
@@ -59,14 +68,14 @@ void set_curl_url (const char *query) {
 void query_perform (void) {
   int ec = curl_easy_perform (curl_handle);
   if (ec) {
-    exit (3);
+    exit (ERROR_NET);
   }
 }
 
 
 void usage_auth (void) {
   printf ("vkconcli auth <username> <password>\n");
-  exit (1);
+  exit (ERROR_COMMAND_LINE);
 }
 
 int act_auth (char **argv, int argc) {
@@ -87,7 +96,7 @@ int act_auth (char **argv, int argc) {
   json_error_t *error = 0;
   json_t *ans = json_loadb (buf, buf_ptr, 0, error);
   if (!ans) {
-    exit (4);
+    exit (ERROR_PARSE_ANSWER);
   }
 
   if (verbosity >= 1) {
@@ -95,15 +104,27 @@ int act_auth (char **argv, int argc) {
   }
 
   if (json_object_get (ans, "error")) {
-    exit (5);
+    exit (ERROR_UNEXPECTED_ANSWER);
   }
 
   if (!json_object_get (ans, "access_token")) {
-    exit (5);
+    exit (ERROR_UNEXPECTED_ANSWER);
   }
 
   printf ("%s\n", json_string_value (json_object_get (ans, "access_token")));
   return 0; 
+}
+
+void print_user_id (int uid) {
+  printf ("%d", uid);
+}
+
+void print_datetime (int date) {
+  printf ("%d", date);
+}
+
+void print_text (const char *s) {
+  printf ("%s\n", s);
 }
 
 void print_message (json_t *msg) {
@@ -112,29 +133,48 @@ void print_message (json_t *msg) {
   int date = json_object_get (msg, "date") ? json_integer_value (json_object_get (msg, "date")) : -1;
   int out = json_object_get (msg, "out") ? json_integer_value (json_object_get (msg, "out")) : -1;
   int uid = json_object_get (msg, "uid") ? json_integer_value (json_object_get (msg, "uid")) : -1;
+  int unr = json_object_get (msg, "read_state") ? !json_integer_value (json_object_get (msg, "read_state")) : -1;
   const char *title = json_object_get (msg, "title") ? json_string_value (json_object_get (msg, "title")) : "";
   const char *body = json_object_get (msg, "body") ? json_string_value (json_object_get (msg, "body")) : "";
-  printf ("Message #%d: message %s %d at (%d)\n%s\n%s\n", mid, out ? "to" : "from", uid, date, title, body);
+  //printf ("Message #%d: message %s " USER_ID_STR " at (%d)\n%s\n%s\n", mid, out ? "to" : "from", USER_ID(uid), date, title, body);
+  printf ("Message #%d: message %s ", mid, out ? "to" : "from");
+  print_user_id (uid);
+  printf (". Sent at ");
+  print_datetime (date);
+  printf (". State %s.\n", unr ? "unread" : "read");
+  print_text (title);
+  print_text (body);
 }
 
 void print_messages (json_t *arr) {
   assert (arr);
   int l = json_array_size (arr);
   printf ("Got %d messages\n", l ? l - 1 : 0);
-  int i; 
-  for (i = 1; i < l; i++) {
-    if (i != 1) {
-      printf ("\n");
-      printf ("---------\n");
-      printf ("\n");
+  int i;
+  if (!reverse) {
+    for (i = 1; i < l; i++) {
+      if (i != 1) {
+        printf ("\n");
+        printf ("---------\n");
+        printf ("\n");
+      }
+      print_message (json_array_get (arr, i));
     }
-    print_message (json_array_get (arr, i));
+  } else {
+    for (i = l - 1; i >= 1; i--) {
+      if (i != l - 1) {
+        printf ("\n");
+        printf ("---------\n");
+        printf ("\n");
+      }
+      print_message (json_array_get (arr, i));
+    }
   }
 }
 
 void usage_msg_read (void) {
   printf ("vkconcli msg read [in|out]\n");
-  exit (1);
+  exit (ERROR_COMMAND_LINE);
 }
 
 int act_msg_read (char **argv, int argc) {
@@ -172,7 +212,7 @@ int act_msg_read (char **argv, int argc) {
   json_error_t *error = 0;
   json_t *ans = json_loadb (buf, buf_ptr, 0, error);
   if (!ans) {
-    exit (4);
+    exit (ERROR_PARSE_ANSWER);
   }
 
   if (verbosity >= 1) {
@@ -180,11 +220,11 @@ int act_msg_read (char **argv, int argc) {
   }
 
   if (json_object_get (ans, "error")) {
-    exit (5);
+    exit (ERROR_UNEXPECTED_ANSWER);
   }
 
   if (!json_object_get (ans, "response")) {
-    exit (5);
+    exit (ERROR_UNEXPECTED_ANSWER);
   }
 
   print_messages (json_object_get (ans, "response"));
@@ -193,7 +233,7 @@ int act_msg_read (char **argv, int argc) {
 
 void usage_msg (void) {
   printf ("vkconcli msg [read, send]\n");
-  exit (1);
+  exit (ERROR_COMMAND_LINE);
 }
 
 int act_msg (char **argv, int argc) {
@@ -212,7 +252,7 @@ void usage_act (void) {
   printf ("vkconcli <action>. Possible actions are:\n");
   printf ("\tauth\n");
   printf ("\tmsg (message, messages)\n");
-  exit (1);
+  exit (ERROR_COMMAND_LINE);
 }
 
 int act (const char *str, char **argv, int argc) {
@@ -231,13 +271,15 @@ void usage (void) {
   printf ("\t-v: increase verbosity level by 1\n");
   printf ("\t-h: print this help and exit\n");
   printf ("\t-l: limit. Different things\n");
+  printf ("\t-o: offset. Different things\n");
   printf ("\t-a: specify access token\n");
-  exit (1);
+  printf ("\t-R: print in reverse order\n");
+  exit (ERROR_COMMAND_LINE);
 }
 
 int main (int argc, char **argv) {
   char c;
-  while ((c = getopt (argc, argv, "vhl:o:a:")) != -1) {
+  while ((c = getopt (argc, argv, "vhl:o:a:R")) != -1) {
     switch (c) {
       case 'v': 
         verbosity ++;
@@ -251,6 +293,9 @@ int main (int argc, char **argv) {
       case 'a':
         access_token = optarg;
         break;
+      case 'R':
+        reverse ++;
+        break;	
       case 'h':
       default:
         usage ();
@@ -267,12 +312,12 @@ int main (int argc, char **argv) {
 
 
   if (curl_global_init (CURL_GLOBAL_ALL)) {
-    exit (2);
+    exit (ERROR_CURL_INIT);
   }
 
   curl_handle = curl_easy_init ();
   if (!curl_handle) {
-    exit (2);
+    exit (ERROR_CURL_INIT);
   }
 
   set_curl_options ();
