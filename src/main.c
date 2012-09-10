@@ -24,6 +24,7 @@
 
 #define MAX_MESSAGE_LEN 1000
 
+
 int verbosity;
 
 #define BUF_SIZE (1 << 23)
