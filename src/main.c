@@ -8,6 +8,8 @@
 #include <curl/curl.h>
 #include <jansson.h>
 
+#include "structures.h"
+
 
 #define CLIENT_ID 2870218
 #define CLIENT_ID_STR "2870218"
@@ -39,12 +41,12 @@ char *get_access_token (void) {
     if (!access_token) {
       exit (ERROR_NO_ACCESS_TOKEN);
     }
-    access_token = strdup (access_token);
+    access_token = strdup (access_token);    
   }
   return access_token;
 }
 
-size_t save_to_buff (char *ptr, size_t size, size_t nmemb, void *userdata) {
+size_t save_to_buff (char *ptr, size_t size, size_t nmemb, void *userdata __attribute__ ((unused)) ) {
   if (buf_ptr + size * nmemb >= BUF_SIZE) {
     return 0;
   }
