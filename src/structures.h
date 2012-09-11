@@ -1,12 +1,15 @@
 #ifndef __STRUCTURES_H__
 #define __STRUCTURES_H__
 
+#define TYPE_MESSAGE 0xff0000
+
 struct message {
 	int type;
 	int mid;
 	int uid;
 	int date;
 	int read_state;
+	int out;
 	char *title;
 	char *body;
 	int attachment_num;
@@ -17,6 +20,7 @@ struct message {
 	int chat_active[6];
 	int users_count;
 	int admin_id;
+	int deleted;
 	int emoji;
 };
 
