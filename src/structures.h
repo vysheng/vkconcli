@@ -3,6 +3,7 @@
 
 #define TYPE_MESSAGE 0xff0000
 
+#include <jansson.h>
 struct message {
 	int type;
 	int mid;
@@ -114,6 +115,7 @@ struct post {
 struct place {
 	int type;
 	int id;
+  int __empty;
 	double longitude;
 	double latitude;
 	int country_id;
@@ -156,6 +158,7 @@ struct note {
 struct app {
 	int type;
 	int aid;
+  int __empty;
 	char *name;
 	char *src;
 	char *src_big;
@@ -164,6 +167,7 @@ struct app {
 struct poll {
 	int type;
 	int pid;
+  int __empty;
 	char *question;
 };
 
@@ -190,5 +194,7 @@ struct attachment {
 	} data;
 };
 
+void print_message (int level, const struct message *msg);
+struct message *parse_message (const json_t *J);
 
 #endif

@@ -135,7 +135,7 @@ void print_text (const char *s) {
   printf ("%s\n", s);
 }
 
-void print_message (json_t *msg) {
+/*void print_message (json_t *msg) {
   assert (msg);
   int mid = json_object_get (msg, "mid") ? json_integer_value (json_object_get (msg, "mid")) : -1;
   int date = json_object_get (msg, "date") ? json_integer_value (json_object_get (msg, "date")) : -1;
@@ -152,7 +152,7 @@ void print_message (json_t *msg) {
   printf (". State %s.\n", unr ? "unread" : "read");
   print_text (title);
   print_text (body);
-}
+}*/
 
 void print_messages (json_t *arr) {
   assert (arr);
@@ -166,7 +166,8 @@ void print_messages (json_t *arr) {
         printf ("---------\n");
         printf ("\n");
       }
-      print_message (json_array_get (arr, i));
+      print_message (0, parse_message (json_array_get (arr, i)));
+      //print_message (json_array_get (arr, i));
     }
   } else {
     for (i = l - 1; i >= 1; i--) {
@@ -175,7 +176,8 @@ void print_messages (json_t *arr) {
         printf ("---------\n");
         printf ("\n");
       }
-      print_message (json_array_get (arr, i));
+      print_message (0, parse_message (json_array_get (arr, i)));
+      //print_message (json_array_get (arr, i));
     }
   }
 }

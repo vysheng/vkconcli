@@ -3,6 +3,7 @@
 
 #include <jansson.h>
 #include <string.h>
+#include <assert.h>
 
 int parse_int_value (const json_t *J, const char *f, int def) {
   return json_object_get (J, f) ? json_integer_value (json_object_get (J, f)) : def;
@@ -16,9 +17,31 @@ char *parse_string_value (const json_t *J, const char *f, const char *def) {
 #define GET_STRING_FIELD(J,r,s) r->s = parse_string_value (J, #s, "")
 
 
-void print_message (const struct message *msg, int level) {
+void print_spaces (int level) {
+	int i;
+	for (i = 0; i < level; i++) printf (" ");
+}
+
+
+
+void print_message (int level, const struct message *msg) {
 	assert (msg->type == TYPE_MESSAGE);
-	for (i = 0; i < level; i++) print (' ');
+
+  print_spaces (level);
+  printf ("Message #%d %s user %d\n", msg->mid, msg->out ? "to" : "from", msg->uid);
+  print_spaces (level + 1);
+  printf ("Created at %d, state %s\n", msg->date, msg->read_state ? "read" : "unread");
+  print_spaces (level + 1);
+  if (msg->chat_id <= 0) {
+    printf ("No chat\n");
+  } else {
+    printf ("Chat_id %d, users_count %d, admin_id %d\n", msg->chat_id, msg->users_count, msg->admin_id);
+  }
+  print_spaces (level + 1);
+  printf ("Title %s\n", msg->title ? msg->title : "<none>");
+  print_spaces (level + 1);
+  printf ("Body %s\n", msg->body ? msg->body : "<none>");
+
 }
 
 struct message *parse_message (const json_t *J) {
