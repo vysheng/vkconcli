@@ -1,0 +1,11 @@
+#ifndef __VK_ERRORS_H__
+#define __VK_ERRORS_H__
+
+#define ERROR_COMMAND_LINE 1
+#define ERROR_CURL_INIT 2
+#define ERROR_NET 3
+#define ERROR_PARSE_ANSWER 4
+#define ERROR_UNEXPECTED_ANSWER 5
+#define ERROR_NO_ACCESS_TOKEN 6
+
+#endif

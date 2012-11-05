@@ -14,7 +14,9 @@ char *parse_string_value (const json_t *J, const char *f, const char *def) {
 }
 
 #define GET_INT_FIELD(J,r,s) r->s = parse_int_value (J, #s, 0)
+#define GET_INT_FIELD_EXT(J,r,s,t) r->s = parse_int_value (J, #t, 0)
 #define GET_STRING_FIELD(J,r,s) r->s = parse_string_value (J, #s, "")
+#define GET_STRING_FIELD_EXT(J,r,s,t) r->s = parse_string_value (J, #t, "")
 
 
 void print_spaces (int level) {
@@ -25,10 +27,10 @@ void print_spaces (int level) {
 
 
 void print_message (int level, const struct message *msg) {
-	assert (msg->type == TYPE_MESSAGE);
+	assert (msg->id.type == TYPE_MESSAGE);
 
   print_spaces (level);
-  printf ("Message #%d %s user %d\n", msg->mid, msg->out ? "to" : "from", msg->uid);
+  printf ("Message #%d %s user %d\n", msg->id.id, msg->out ? "to" : "from", msg->uid);
   print_spaces (level + 1);
   printf ("Created at %d, state %s\n", msg->date, msg->read_state ? "read" : "unread");
   print_spaces (level + 1);
@@ -47,9 +49,9 @@ void print_message (int level, const struct message *msg) {
 struct message *parse_message (const json_t *J) {
 	struct message *r = malloc (sizeof (struct message));
 	memset (r, 0, sizeof (*r));
-	r->type = TYPE_MESSAGE;
+	r->id.type = TYPE_MESSAGE;
 	
-	GET_INT_FIELD(J,r,mid);
+	GET_INT_FIELD_EXT(J,r,id.id,mid);
 	GET_INT_FIELD(J,r,uid);
 	GET_INT_FIELD(J,r,date);
 	GET_INT_FIELD(J,r,out);

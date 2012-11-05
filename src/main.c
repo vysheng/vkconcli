@@ -9,73 +9,20 @@
 #include <jansson.h>
 
 #include "structures.h"
+#include "net.h"
+#include "vk_errors.h"
 
-
-#define CLIENT_ID 2870218
-#define CLIENT_ID_STR "2870218"
-#define CLIENT_SECRET "R9hl0gmUCVAEqYHOYYtu"
-
-#define ERROR_COMMAND_LINE 1
-#define ERROR_CURL_INIT 2
-#define ERROR_NET 3
-#define ERROR_PARSE_ANSWER 4
-#define ERROR_UNEXPECTED_ANSWER 5
-#define ERROR_NO_ACCESS_TOKEN 6
 
 #define MAX_MESSAGE_LEN 1000
 
 
 int verbosity;
 
-#define BUF_SIZE (1 << 23)
-char buf[BUF_SIZE];
-int buf_ptr;
 int limit;
 int offset;
 char *access_token;
 int reverse;
 
-
-char *get_access_token (void) {
-  if (!access_token) {
-    access_token = getenv ("vk_access_token");
-    if (!access_token) {
-      exit (ERROR_NO_ACCESS_TOKEN);
-    }
-    access_token = strdup (access_token);    
-  }
-  return access_token;
-}
-
-size_t save_to_buff (char *ptr, size_t size, size_t nmemb, void *userdata __attribute__ ((unused)) ) {
-  if (buf_ptr + size * nmemb >= BUF_SIZE) {
-    return 0;
-  }
-  memcpy (buf + buf_ptr, ptr, size * nmemb);
-  buf_ptr += nmemb * size;
-  buf[buf_ptr] = 0;
-  return nmemb * size;
-}
-
-CURL *curl_handle;
-
-void set_curl_options (void) {
-  curl_easy_setopt (curl_handle, CURLOPT_VERBOSE, verbosity >= 1);
-  curl_easy_setopt (curl_handle, CURLOPT_HEADER, 0);
-  curl_easy_setopt (curl_handle, CURLOPT_NOPROGRESS, 1);
-  curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, save_to_buff);
-}
-
-void set_curl_url (const char *query) {
-  curl_easy_setopt (curl_handle, CURLOPT_URL, query);
-}
-
-void query_perform (void) {
-  int ec = curl_easy_perform (curl_handle);
-  if (ec) {
-    exit (ERROR_NET);
-  }
-}
 
 
 void usage_auth (void) {
@@ -87,26 +34,8 @@ int act_auth (char **argv, int argc) {
   if (argc != 2) {
     usage_auth ();
   }
-  static char query[1001];
-  snprintf (query, 1000, "https://oauth.vk.com/token?grant_type=password&client_id=%d&client_secret=%s&username=%s&password=%s&scope=messages,friends", CLIENT_ID, CLIENT_SECRET, argv[0], argv[1]);
-  
-  set_curl_url (query);
-  
-  query_perform ();
-
-  if (verbosity >= 1) {
-    printf ("%s\n", buf);
-  }
-
-  json_error_t *error = 0;
-  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
-  if (!ans) {
-    exit (ERROR_PARSE_ANSWER);
-  }
-
-  if (verbosity >= 1) {
-    printf ("Answer parsed\n");
-  }
+  json_t *ans = vk_auth (argv[0], argv[1]);
+  assert (ans);
 
   if (json_object_get (ans, "error")) {
     exit (ERROR_UNEXPECTED_ANSWER);
@@ -200,43 +129,9 @@ int act_msg_read (char **argv, int argc) {
     usage_msg_read ();
   }
 
-  static char query[1001];
-  if (limit <= 0) {
-    limit = 100;
-  }
-  if (limit > 100) {
-    limit = 100;
-  }
-  if (offset < 0) {
-    offset = 0;
-  }
-  snprintf (query, 1000, "https://api.vk.com/method/messages.get?out=%d&offset=%d&count=%d&access_token=%s", out, offset, limit, get_access_token ());
-  set_curl_url (query);
+  json_t *ans = vk_msgs_get (out, limit, offset);
+  assert (ans);
   
-  query_perform ();
-
-  if (verbosity >= 1) {
-    printf ("%s\n", buf);
-  }
-
-  json_error_t *error = 0;
-  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
-  if (!ans) {
-    exit (ERROR_PARSE_ANSWER);
-  }
-
-  if (verbosity >= 1) {
-    printf ("Answer parsed\n");
-  }
-
-  if (json_object_get (ans, "error")) {
-    exit (ERROR_UNEXPECTED_ANSWER);
-  }
-
-  if (!json_object_get (ans, "response")) {
-    exit (ERROR_UNEXPECTED_ANSWER);
-  }
-
   print_messages (json_object_get (ans, "response"));
   return 0; 
 }
@@ -264,41 +159,7 @@ int act_msg_send (char **argv, int argc) {
   if (argc != 1) {
     usage_msg_read ();
   }
-  int id = atoi (*argv);
-
-  
-  static char query[10001];
-  char *q = curl_easy_escape (curl_handle, read_msg (), 0);
-  snprintf (query, 10000, "https://api.vk.com/method/messages.send?uid=%d&message=%s&access_token=%s", id, q, get_access_token ());
-  //printf ("%s\n", query);
-  curl_free (q);
-  set_curl_url (query);
-  
-  query_perform ();
-
-  if (verbosity >= 1) {
-    printf ("%s\n", buf);
-  }
-
-  json_error_t *error = 0;
-  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
-  if (!ans) {
-    exit (ERROR_PARSE_ANSWER);
-  }
-
-  if (verbosity >= 1) {
-    printf ("Answer parsed\n");
-  }
-
-  if (json_object_get (ans, "error")) {
-    exit (ERROR_UNEXPECTED_ANSWER);
-  }
-
-  if (!json_object_get (ans, "response")) {
-    exit (ERROR_UNEXPECTED_ANSWER);
-  }
-
-  /*print_messages (json_object_get (ans, "response"));*/
+  json_t *ans = vk_msg_send (atoi (argv[0]), read_msg ());
   return 0; 
 }
 
@@ -384,16 +245,6 @@ int main (int argc, char **argv) {
     usage ();
   }
 
-
-  if (curl_global_init (CURL_GLOBAL_ALL)) {
-    exit (ERROR_CURL_INIT);
-  }
-
-  curl_handle = curl_easy_init ();
-  if (!curl_handle) {
-    exit (ERROR_CURL_INIT);
-  }
-
-  set_curl_options ();
+  assert (vk_net_init () >= 0);
   return act (*argv, argv + 1, argc - 1);
 }

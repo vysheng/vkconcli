@@ -4,9 +4,15 @@
 #define TYPE_MESSAGE 0xff0000
 
 #include <jansson.h>
+
+struct ID {
+  int type;
+  int id;
+  int owner;
+};
+
 struct message {
-	int type;
-	int mid;
+  struct ID id;
 	int uid;
 	int date;
 	int read_state;
@@ -46,17 +52,13 @@ struct reposted {
 };
 
 struct photo {
-	int type;
-	int pid;
-	int owner_id;
+  struct ID id;
 	char *src;
 	char *src_big;
 };
 
 struct video {
-	int type;
-	int vid;
-	int owner_id;
+  struct ID id;
 	char *title;
 	char *description;
 	int duration;
@@ -68,9 +70,7 @@ struct video {
 };
 
 struct audio {
-	int type;
-	int aid;
-	int owner_id;
+  struct ID id;
 	char *performer;
 	char *title;
 	int duration;
@@ -78,9 +78,7 @@ struct audio {
 };
 
 struct document {
-	int type;
-	int did;
-	int owner_id;
+  struct ID id;
 	char *title;
 	int size;
 	char *ext;
@@ -94,9 +92,7 @@ struct post_source {
 };
 
 struct post {
-	int type;
-	int id;
-	int to_id;
+  struct ID id;
 	int from_id;
 	int date;
 	char *text;
@@ -113,9 +109,7 @@ struct post {
 };
 
 struct place {
-	int type;
-	int id;
-  int __empty;
+  struct ID id;
 	double longitude;
 	double latitude;
 	int country_id;
@@ -132,9 +126,7 @@ struct geo {
 };
 
 struct graffity {
-	int type;
-	int gid;
-	int owner_id;
+  struct ID id;
 	char *src;
 	char *src_big;
 };
@@ -148,32 +140,25 @@ struct link {
 };
 
 struct note {
-	int type;
-	int nid;
-	int owner_id;
+  struct ID id;
 	char *title;
 	int ncom;
 };
 
 struct app {
-	int type;
-	int aid;
-  int __empty;
+  struct ID id;
 	char *name;
 	char *src;
 	char *src_big;
 };
 
 struct poll {
-	int type;
-	int pid;
-  int __empty;
+  struct ID id;
 	char *question;
 };
 
 struct page {
-	int type;
-	int gid;
+  struct ID id;
 	char *title;
 };
 
