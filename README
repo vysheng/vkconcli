@@ -1,1 +1,1 @@
-Dependences: jansson and curl
+Dependences: jansson, curl and sqlite3
