@@ -8,10 +8,12 @@
 #include <curl/curl.h>
 #include <jansson.h>
 
+#include <sqlite3.h>
+
 #include "structures.h"
 #include "net.h"
 #include "vk_errors.h"
-
+#include "tree.h"
 
 #define MAX_MESSAGE_LEN 1000
 
@@ -23,7 +25,10 @@ int offset;
 char *access_token;
 int reverse;
 
+int disable_sql;
+int disable_net;
 
+int max_depth = 2;
 
 void usage_auth (void) {
   printf ("vkconcli auth <username> <password>\n");
@@ -95,7 +100,11 @@ void print_messages (json_t *arr) {
         printf ("---------\n");
         printf ("\n");
       }
-      print_message (0, parse_message (json_array_get (arr, i)));
+      struct message *msg = vk_parse_message (json_array_get (arr, i));
+      assert (msg);
+      vk_db_insert_message (msg);
+      msg = vk_db_lookup_message (msg->id);
+      print_message (0, msg);
       //print_message (json_array_get (arr, i));
     }
   } else {
@@ -105,7 +114,11 @@ void print_messages (json_t *arr) {
         printf ("---------\n");
         printf ("\n");
       }
-      print_message (0, parse_message (json_array_get (arr, i)));
+      struct message *msg = vk_parse_message (json_array_get (arr, i));
+      assert (msg);
+      vk_db_insert_message (msg);
+      msg = vk_db_lookup_message (msg->id);  
+      print_message (0, msg);
       //print_message (json_array_get (arr, i));
     }
   }
@@ -132,7 +145,7 @@ int act_msg_read (char **argv, int argc) {
   json_t *ans = vk_msgs_get (out, limit, offset);
   assert (ans);
   
-  print_messages (json_object_get (ans, "response"));
+  print_messages (ans);
   return 0; 
 }
 
@@ -160,11 +173,18 @@ int act_msg_send (char **argv, int argc) {
     usage_msg_read ();
   }
   json_t *ans = vk_msg_send (atoi (argv[0]), read_msg ());
+  assert (ans);
   return 0; 
 }
 
 void usage_msg (void) {
   printf ("vkconcli msg [read | send]\n");
+  exit (ERROR_COMMAND_LINE);
+}
+
+
+void usage_user (void) {
+  printf ("vkconcli user <id>\n");
   exit (ERROR_COMMAND_LINE);
 }
 
@@ -182,11 +202,31 @@ int act_msg (char **argv, int argc) {
   return 0; 
 }
 
+int act_user (char **argv, int argc) {
+  if (argc != 1) {
+    usage_user ();
+  }
+  int user_id = atoi (*argv);
+  if (user_id <= 0 || user_id >= 1000000000) {
+    usage_user ();
+  }
+  json_t *ans = vk_profile_get (user_id);
+  assert (ans);
+  int l = json_array_size (ans);
+  int i;
+  for (i = 0; i < l; i++) {
+    struct user *r = vk_parse_user (json_array_get (ans, i));
+    assert (r);
+    print_user (0, r);
+  }
+  return 0;
+}
 
 void usage_act (void) {
   printf ("vkconcli <action>. Possible actions are:\n");
   printf ("\tauth\n");
-  printf ("\tmsg (message, messages)\n");
+  printf ("\tmsg (message, messages, u)\n");
+  printf ("\tuser (friend, u)\n");
   exit (ERROR_COMMAND_LINE);
 }
 
@@ -194,8 +234,11 @@ int act (const char *str, char **argv, int argc) {
   if (!strcmp (str, "auth")) {
     return act_auth (argv, argc);
   }
-  if (!strcmp (str, "msg") || !strcmp (str, "message") || !strcmp (str, "messages")) {
+  if (!strcmp (str, "msg") || !strcmp (str, "message") || !strcmp (str, "messages") || !strcmp (str, "m")) {
     return act_msg (argv, argc);
+  }
+  if (!strcmp (str, "friend") || !strcmp (str, "user") || !strcmp (str, "u")) {
+    return act_user (argv, argc);
   }
   usage_act ();
   return 1;
@@ -209,12 +252,17 @@ void usage (void) {
   printf ("\t-o: offset. Different things\n");
   printf ("\t-a: specify access token\n");
   printf ("\t-R: print in reverse order\n");
+  printf ("\t-D: database souce [default $HOME/.vkdb]\n");
+  printf ("\t-S: disable sql\n");
+  printf ("\t-N: disable net\n");
+  printf ("\t-M: set max depth\n");
   exit (ERROR_COMMAND_LINE);
 }
 
 int main (int argc, char **argv) {
   char c;
-  while ((c = getopt (argc, argv, "vhl:o:a:R")) != -1) {
+  char *dbf = 0;
+  while ((c = getopt (argc, argv, "vhl:o:a:RD:SNM:")) != -1) {
     switch (c) {
       case 'v': 
         verbosity ++;
@@ -230,7 +278,19 @@ int main (int argc, char **argv) {
         break;
       case 'R':
         reverse ++;
-        break;	
+        break;
+      case 'D':
+        dbf = optarg;
+        break;
+      case 'S':
+        disable_sql ++;
+        break;
+      case 'N':
+        disable_net ++;
+        break;
+      case 'M':
+        max_depth = atoi (optarg);
+        break;
       case 'h':
       default:
         usage ();
@@ -245,6 +305,11 @@ int main (int argc, char **argv) {
     usage ();
   }
 
-  assert (vk_net_init () >= 0);
+  if (!disable_net) {
+    assert (vk_net_init () >= 0);
+  }
+  if (!disable_sql) {
+    assert (vk_db_init (dbf) >= 0);
+  }
   return act (*argv, argv + 1, argc - 1);
 }

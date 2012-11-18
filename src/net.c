@@ -10,7 +10,7 @@
 
 #include "vk_errors.h"
 #define CLIENT_ID 2870218
-#define CLIENT_ID_STR "2870218"
+#define CLIENT_ID_STR #CLIENT_ID
 #define CLIENT_SECRET "R9hl0gmUCVAEqYHOYYtu"
 
 CURL *curl_handle;
@@ -133,7 +133,7 @@ json_t *vk_msgs_get (int out, int offset, int limit) {
     exit (ERROR_UNEXPECTED_ANSWER);
   }
 
-  if (!json_object_get (ans, "response")) {
+  if (!(ans = json_object_get (ans, "response"))) {
     exit (ERROR_UNEXPECTED_ANSWER);
   }
 
@@ -169,10 +169,49 @@ json_t *vk_msg_send (int id, const char *msg) {
     exit (ERROR_UNEXPECTED_ANSWER);
   }
 
-  if (!json_object_get (ans, "response")) {
+  if (!(ans = json_object_get (ans, "response"))) {
     exit (ERROR_UNEXPECTED_ANSWER);
   }
 
+  return ans; 
+}
+
+json_t *vk_profile_get (int uid) {
+  assert (get_access_token ());
+  static char query[10001];
+  snprintf (query, 10000, "https://api.vk.com/method/getProfiles?uid=%d&fields=uid,first_name,last_name,nickname,screen_name,sex,bdate,city,country,timezone,photo,photo_medium,photo_big,has_mobile,rate,contacts,education,online,counters,can_post,can_see_all_posts,can_write_private_message,activity,last_seen,relation,wall_comments,relatives&access_token=%s", uid, get_access_token ());
+  //printf ("%s\n", query);
+  set_curl_url (query);
+  
+  query_perform ();
+
+  if (verbosity >= 2) {
+    printf ("%s\n", buf);
+  }
+
+  json_error_t *error = 0;
+  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
+  if (!ans) {
+    exit (ERROR_PARSE_ANSWER);
+  }
+
+  if (verbosity >= 2) {
+    printf ("Answer parsed\n");
+  }
+
+  if (json_object_get (ans, "error")) {
+    exit (ERROR_UNEXPECTED_ANSWER);
+  }
+
+  if (!(ans = json_object_get (ans, "response"))) {
+    exit (ERROR_UNEXPECTED_ANSWER);
+  }
+
+  if (verbosity >= 3) {
+    char *s = json_dumps (ans, 0);
+    fprintf (stderr, "%s\n", s);
+    free (s);
+  }
   return ans; 
 }
 
