@@ -154,6 +154,11 @@ void usage_msg_send (void) {
   exit (ERROR_COMMAND_LINE);
 }
 
+void usage_wall_post (void) {
+  printf ("vkconcli wall post <recipient_id>\n");
+  exit (ERROR_COMMAND_LINE);
+}
+
 char *read_msg (void) {
   static char msg_buf[MAX_MESSAGE_LEN + 100];
   int cur_len = 0;
@@ -177,6 +182,15 @@ int act_msg_send (char **argv, int argc) {
   return 0; 
 }
 
+int act_wall_post (char **argv, int argc) {
+  if (argc != 1) {
+    usage_wall_post ();
+  }
+  json_t *ans = vk_wall_post (atoi (argv[0]), read_msg ());
+  assert (ans);
+  return 0;
+}
+
 void usage_msg (void) {
   printf ("vkconcli msg [read | send]\n");
   exit (ERROR_COMMAND_LINE);
@@ -185,6 +199,11 @@ void usage_msg (void) {
 
 void usage_user (void) {
   printf ("vkconcli user <id>\n");
+  exit (ERROR_COMMAND_LINE);
+}
+
+void usage_wall (void) {
+  printf ("vkconcli wall [post]\n");
   exit (ERROR_COMMAND_LINE);
 }
 
@@ -222,11 +241,23 @@ int act_user (char **argv, int argc) {
   return 0;
 }
 
+int act_wall (char **argv, int argc) {
+  if (argc <= 0) {
+    usage_wall ();
+  }
+  if (!strcmp (*argv, "post")) {
+    return act_wall_post (argv + 1, argc - 1);
+  }
+  usage_wall ();
+  return ERROR_COMMAND_LINE;
+}
+
 void usage_act (void) {
   printf ("vkconcli <action>. Possible actions are:\n");
   printf ("\tauth\n");
   printf ("\tmsg (message, messages, u)\n");
   printf ("\tuser (friend, u)\n");
+  printf ("\twall\n");
   exit (ERROR_COMMAND_LINE);
 }
 
@@ -240,6 +271,10 @@ int act (const char *str, char **argv, int argc) {
   if (!strcmp (str, "friend") || !strcmp (str, "user") || !strcmp (str, "u")) {
     return act_user (argv, argc);
   }
+  if (!strcmp (str, "wall")) {
+    return act_wall (argv, argc);
+  }
+
   usage_act ();
   return 1;
 }

@@ -10,4 +10,5 @@
 #define ERROR_SQLITE 7
 #define ERROR_NO_DB 8
 #define ERROR_BUFFER_OVERFLOW 9
+#define ERROR_NO_CONF 10
 #endif

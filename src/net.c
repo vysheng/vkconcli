@@ -63,7 +63,7 @@ json_t *vk_auth (const char *user, const char *password) {
   assert (strlen (user) <= 100);
   assert (strlen (password) <= 100);
   static char query[1001];
-  snprintf (query, 1000, "https://oauth.vk.com/token?grant_type=password&client_id=%d&client_secret=%s&username=%s&password=%s&scope=messages,friends", CLIENT_ID, CLIENT_SECRET, user, password);
+  snprintf (query, 1000, "https://oauth.vk.com/token?grant_type=password&client_id=%d&client_secret=%s&username=%s&password=%s&scope=%d", CLIENT_ID, CLIENT_SECRET, user, password, 2 | 4096 | 8192 | 512);
   
   set_curl_url (query);
   
@@ -145,6 +145,43 @@ json_t *vk_msg_send (int id, const char *msg) {
   static char query[10001];
   char *q = curl_easy_escape (curl_handle, msg, 0);
   snprintf (query, 10000, "https://api.vk.com/method/messages.send?uid=%d&message=%s&access_token=%s", id, q, get_access_token ());
+  //printf ("%s\n", query);
+  curl_free (q);
+  set_curl_url (query);
+  
+  query_perform ();
+
+  if (verbosity >= 2) {
+    printf ("%s\n", buf);
+  }
+
+  json_error_t *error = 0;
+  json_t *ans = json_loadb (buf, buf_ptr, 0, error);
+  if (!ans) {
+    exit (ERROR_PARSE_ANSWER);
+  }
+
+  if (verbosity >= 2) {
+    printf ("Answer parsed\n");
+  }
+
+  if (json_object_get (ans, "error")) {
+    exit (ERROR_UNEXPECTED_ANSWER);
+  }
+
+  if (!(ans = json_object_get (ans, "response"))) {
+    exit (ERROR_UNEXPECTED_ANSWER);
+  }
+
+  return ans; 
+}
+
+json_t *vk_wall_post (int id, const char *msg) {
+  assert (id);
+  assert (get_access_token ());
+  static char query[10001];
+  char *q = curl_easy_escape (curl_handle, msg, 0);
+  snprintf (query, 10000, "https://api.vk.com/method/wall.post?owner_id=%d&message=%s&access_token=%s", id, q, get_access_token ());
   //printf ("%s\n", query);
   curl_free (q);
   set_curl_url (query);

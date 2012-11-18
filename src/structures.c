@@ -39,8 +39,10 @@ void print_user (int level, const struct user *user) {
   print_spaces (level);
   printf ("User #%d: %s %s. URL: https://vk.com/%s\n", user->id, user->first_name, user->last_name, user->screen_name);
 
-  print_spaces (level);
-  printf ("  Birthday %s. Sex %s.\n", user->birth, user->sex == 2 ? "male" : user->sex == 1 ? "female" : "unknown");
+  print_spaces (level + 1);
+  printf ("Birthday %s. Sex %s.\n", user->birth, user->sex == 2 ? "male" : user->sex == 1 ? "female" : "unknown");
+  print_spaces (level + 1);
+  printf ("Status %s\n", user->activity);
 }
 
 
