@@ -4,6 +4,10 @@
 #include <string.h>
 #include <assert.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <fcntl.h>
+#include <poll.h>
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -19,6 +23,8 @@
 
 
 int verbosity;
+
+int persistent;
 
 int limit;
 int offset;
@@ -142,7 +148,7 @@ int act_msg_read (char **argv, int argc) {
     usage_msg_read ();
   }
 
-  json_t *ans = vk_msgs_get (out, limit, offset);
+  json_t *ans = vk_msgs_get (out, offset, limit);
   assert (ans);
   
   print_messages (ans);
@@ -294,10 +300,137 @@ void usage (void) {
   exit (ERROR_COMMAND_LINE);
 }
 
+#define STD_BUF_SIZE (1 << 20)
+static char std_buf[STD_BUF_SIZE + 1];
+int std_buf_pos;
+int cur_pos;
+char *cur_token;
+int cur_token_len;
+#define TOKEN_NEED_MORE_BYTES -1
+#define TOKEN_ERROR -2
+#define TOKEN_OK 1 
+#define TOKEN_UNEXPECTED -3
+
+#define WORK_CONSOLE 1
+
+#define cur_char std_buf[cur_pos]
+
+int is_whitespace (char c) {
+  return (c == 32 || c == 10 || c == 13 || c == 9 || c == 11 || c == 12);
+}
+
+int is_linebreak (char c) {
+  return (c == 10 || c == 13);
+}
+
+int next_token (void) {
+  while (is_whitespace (cur_char)) { cur_pos ++; }
+  if (!cur_char) { return TOKEN_NEED_MORE_BYTES; }
+  char c = cur_char;
+  char *p = std_buf + cur_pos;
+  if (c != '"') {
+    while (!is_whitespace (cur_char) && cur_char) { cur_pos ++; }
+    if (!cur_char) return TOKEN_NEED_MORE_BYTES;
+    cur_token = p;
+    cur_token_len = std_buf + cur_pos - p;
+    return TOKEN_OK;
+  } else {
+    if (!std_buf[cur_pos + 1] || !std_buf[cur_pos + 2]) return TOKEN_NEED_MORE_BYTES;
+    if (std_buf[cur_pos + 1] == '"' && std_buf[cur_pos + 2] == '"') {
+      p += 3;
+      cur_pos += 3;
+      while (cur_char && memcmp ("\"\"\"", std_buf + cur_pos, 3)) { cur_pos ++; }
+      if (!cur_char) { return TOKEN_NEED_MORE_BYTES; }
+      cur_token = p;
+      cur_token_len = std_buf + cur_pos - p;
+      cur_pos += 3;
+      return TOKEN_OK;
+    } else {
+      p ++;
+      cur_pos ++;
+      while (!is_linebreak (cur_char) && cur_char != '"' && cur_char) { cur_pos ++; }
+      if (!cur_char) { return TOKEN_NEED_MORE_BYTES; }
+      if (cur_char == '"') {
+        cur_token = p;
+        cur_token_len = std_buf + cur_pos - p;
+        cur_pos ++;
+        return TOKEN_OK;
+      }
+      return TOKEN_ERROR;
+    }
+  }
+}
+
+#define NT \
+  { \
+    int t = next_token ();\
+    if (t != TOKEN_OK) { return t;}\
+  }
+
+int work_console_msg_to (int id) {
+  NT;
+  char *s = strndup (cur_token, cur_token_len);
+  vk_msg_send (id, s);
+  printf ("Msg to %d successfully sent:\n---\n%s\n---\n", id, s);
+  free (s);
+  return TOKEN_OK;
+}
+
+int work_console_msg (void) {
+  NT;
+  int n = atoi (cur_token);
+  if (n <= 0 || n >= 1000000000) { return TOKEN_UNEXPECTED; }
+  return work_console_msg_to (n);
+}
+
+int work_console_main (void) {
+  NT;
+  if (cur_token_len == 3 && !strncmp ("msg", cur_token, 3)) {
+    return work_console_msg ();
+  }
+  return TOKEN_UNEXPECTED;
+}
+
+void work_console (void) {
+  int x = read (STDIN_FILENO, std_buf + std_buf_pos, STD_BUF_SIZE - std_buf_pos);
+  if (x <= 0) {
+    return;
+  }
+  std_buf_pos += x;
+  std_buf[std_buf_pos] = 0;
+  int r = work_console_main ();
+  if (r != TOKEN_NEED_MORE_BYTES) {
+    memcpy (std_buf, std_buf + cur_pos, std_buf_pos - cur_pos + 1);
+    std_buf_pos -= cur_pos;
+    cur_pos = 0;
+  } else {
+    cur_pos = 0;
+  }
+}
+
+int poll_work (void) {
+  struct pollfd s[1];
+  s[0].fd = 0;
+  s[0].events = POLLIN;
+  poll (s, 1, 1000);
+  int r = 0;
+  if (s[0].revents & POLLIN) { r |= WORK_CONSOLE; }
+  return r;
+}
+
+void loop (void) {
+  while (1) {
+    int x = poll_work ();
+    if (x & WORK_CONSOLE) {
+      work_console ();
+    }
+  }
+}
+
 int main (int argc, char **argv) {
   char c;
   char *dbf = 0;
-  while ((c = getopt (argc, argv, "vhl:o:a:RD:SNM:")) != -1) {
+  while ((c = getopt (argc, argv, "vhl:o:a:RD:SNM:P")) != -1) {
     switch (c) {
       case 'v': 
         verbosity ++;
@@ -326,6 +459,9 @@ int main (int argc, char **argv) {
       case 'M':
         max_depth = atoi (optarg);
         break;
+      case 'P':
+        persistent ++;
+        break;
       case 'h':
       default:
         usage ();
@@ -336,15 +472,22 @@ int main (int argc, char **argv) {
   argv += optind;
   
   assert (argc >= 0);
-  if (!argc) {
-    usage ();
-  }
 
   if (!disable_net) {
     assert (vk_net_init () >= 0);
   }
   if (!disable_sql) {
     assert (vk_db_init (dbf) >= 0);
+  }
+  if (persistent) {
+    if (disable_net || disable_sql) {
+      fprintf (stderr, "In persistent mode sql and net should be on\n");
+      return ERROR_COMMAND_LINE;
+    }
+    loop ();
+  }
+  if (!argc) {
+    usage ();
   }
   return act (*argv, argv + 1, argc - 1);
 }
