@@ -34,6 +34,22 @@ void print_message (int level, const struct message *msg) {
 
 }
 
+void print_message_array (int num, struct message **msg, int reverse) {
+  int i;
+  if (!reverse) {
+    for (i = 0; i < num; i++) {
+      printf ("----------\n");
+      print_message (0, msg[i]);
+    }
+    printf ("----------\n");
+  } else {
+    for (i = num - 1; i >= 0; i--) {
+      printf ("----------\n");
+      print_message (0, msg[i]);
+    }
+    printf ("----------\n");
+  }
+}
 
 void print_user (int level, const struct user *user) {
   print_spaces (level);
@@ -45,4 +61,13 @@ void print_user (int level, const struct user *user) {
   printf ("Status %s\n", user->activity);
 }
 
+
+void print_user_array (int num, struct user **users) {
+  int i;
+  for (i = 0; i < num; i++) {
+    printf ("----------\n");
+    print_user (0, users[i]);
+  }
+  printf ("----------\n");
+}
 

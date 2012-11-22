@@ -35,8 +35,8 @@ int vk_check_table_""" + table_name["sql_name"] + """ (void) {
   char *e = 0;
 
   if (sqlite3_exec (db_handle, q, ct_callback, 0, &e) != SQLITE_OK || e) {
-    fprintf (stderr, \"SQLite error %s\\n\", e);
-    exit (ERROR_SQLITE);
+    vk_error (ERROR_SQLITE, \"SQLite error %s\\n\", e);
+    return _ERROR;
   }
 
   sqlite3_free (q);
@@ -114,8 +114,8 @@ int vk_db_insert_""" + table_name["c_name"] + """ (struct """ + table_name["c_na
   char *e = 0;
 
   if (sqlite3_exec (db_handle, q, ct_callback, 0, &e) != SQLITE_OK || e) {
-    fprintf (stderr, \"SQLite error %s\\n\", e);
-    exit (ERROR_SQLITE);
+    vk_error (ERROR_SQLITE, \"SQLite error %s\\n\", e);
+    return _ERROR;
   }
 
   sqlite3_free (q);
@@ -193,8 +193,9 @@ struct """ + table_name["c_name"] + """ *vk_db_lookup_""" + table_name["c_name"]
   char *e = 0;
 
   if (sqlite3_exec (db_handle, q, ct_""" + table_name["c_name"] + """_callback, &r, &e) != SQLITE_OK || e) {
-    fprintf (stderr, \"SQLite error %s\\n\", e);
-    exit (ERROR_SQLITE);
+    vk_error (ERROR_SQLITE, \"SQLite error %s\\n\", e);
+    free (r.r);
+    return 0;
   }
 
   sqlite3_free (q);

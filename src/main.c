@@ -3,11 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdarg.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/select.h>
+#include <unistd.h>
+
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -36,98 +40,42 @@ int disable_net;
 
 int max_depth = 2;
 
+char *current_error;
+int current_error_code;
+
+void vk_error (int error_code, const char *format, ...) {
+  current_error_code = error_code;
+  va_list l;
+  va_start (l, format);
+  static char buf[10000];
+  vsnprintf (buf, 9999, format, l);
+  if (current_error) { free (current_error); }
+  current_error = strdup (buf);
+  if (verbosity) {
+    fprintf (stderr, "%s\n", current_error);
+  }
+}
+
+int wait_all (void) {
+  int t = 0;
+  while ((t = work_read_write ()) == 0);
+  return t;
+}
 void usage_auth (void) {
-  printf ("vkconcli auth <username> <password>\n");
+  printf ("vkconcli auth <username>\n");
   exit (ERROR_COMMAND_LINE);
 }
 
+
+
 int act_auth (char **argv, int argc) {
-  if (argc != 2) {
+  if (argc != 1) {
     usage_auth ();
   }
-  json_t *ans = vk_auth (argv[0], argv[1]);
-  assert (ans);
-
-  if (json_object_get (ans, "error")) {
-    exit (ERROR_UNEXPECTED_ANSWER);
-  }
-
-  if (!json_object_get (ans, "access_token")) {
-    exit (ERROR_UNEXPECTED_ANSWER);
-  }
-
-  printf ("%s\n", json_string_value (json_object_get (ans, "access_token")));
-  return 0; 
-}
-
-void print_user_id (int uid) {
-  printf ("%d", uid);
-}
-
-void print_datetime (int date) {
-  long x = date;
-  struct tm *tm = localtime ((time_t *)&x);
-  assert (tm);
-  printf ("[%02d.%02d.%04d %02d:%02d:%02d]", tm->tm_mday, tm->tm_mon + 1, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec);
-}
-
-void print_text (const char *s) {
-  printf ("%s\n", s);
-}
-
-/*void print_message (json_t *msg) {
-  assert (msg);
-  int mid = json_object_get (msg, "mid") ? json_integer_value (json_object_get (msg, "mid")) : -1;
-  int date = json_object_get (msg, "date") ? json_integer_value (json_object_get (msg, "date")) : -1;
-  int out = json_object_get (msg, "out") ? json_integer_value (json_object_get (msg, "out")) : -1;
-  int uid = json_object_get (msg, "uid") ? json_integer_value (json_object_get (msg, "uid")) : -1;
-  int unr = json_object_get (msg, "read_state") ? !json_integer_value (json_object_get (msg, "read_state")) : -1;
-  const char *title = json_object_get (msg, "title") ? json_string_value (json_object_get (msg, "title")) : "";
-  const char *body = json_object_get (msg, "body") ? json_string_value (json_object_get (msg, "body")) : "";
-  //printf ("Message #%d: message %s " USER_ID_STR " at (%d)\n%s\n%s\n", mid, out ? "to" : "from", USER_ID(uid), date, title, body);
-  printf ("Message #%d: message %s ", mid, out ? "to" : "from");
-  print_user_id (uid);
-  printf (". Sent at ");
-  print_datetime (date);
-  printf (". State %s.\n", unr ? "unread" : "read");
-  print_text (title);
-  print_text (body);
-}*/
-
-void print_messages (json_t *arr) {
-  assert (arr);
-  int l = json_array_size (arr);
-  printf ("Got %d messages\n", l ? l - 1 : 0);
-  int i;
-  if (!reverse) {
-    for (i = 1; i < l; i++) {
-      if (i != 1) {
-        printf ("\n");
-        printf ("---------\n");
-        printf ("\n");
-      }
-      struct message *msg = vk_parse_message (json_array_get (arr, i));
-      assert (msg);
-      vk_db_insert_message (msg);
-      msg = vk_db_lookup_message (msg->id);
-      print_message (0, msg);
-      //print_message (json_array_get (arr, i));
-    }
-  } else {
-    for (i = l - 1; i >= 1; i--) {
-      if (i != l - 1) {
-        printf ("\n");
-        printf ("---------\n");
-        printf ("\n");
-      }
-      struct message *msg = vk_parse_message (json_array_get (arr, i));
-      assert (msg);
-      vk_db_insert_message (msg);
-      msg = vk_db_lookup_message (msg->id);  
-      print_message (0, msg);
-      //print_message (json_array_get (arr, i));
-    }
-  }
+  static char passwd[1000];
+  strncpy (passwd, getpass ("Password: "), 999);
+  if (aio_auth (argv[0], passwd) < 0) { return _ERROR; }
+  return wait_all (); 
 }
 
 void usage_msg_read (void) {
@@ -148,11 +96,11 @@ int act_msg_read (char **argv, int argc) {
     usage_msg_read ();
   }
 
-  json_t *ans = vk_msgs_get (out, offset, limit);
-  assert (ans);
-  
-  print_messages (ans);
-  return 0; 
+  if (aio_msgs_get (offset, limit, reverse, out) < 0) {
+    return _ERROR;
+  }
+  while (work_read_write () == 0);
+  return 0;
 }
 
 void usage_msg_send (void) {
@@ -183,18 +131,18 @@ int act_msg_send (char **argv, int argc) {
   if (argc != 1) {
     usage_msg_read ();
   }
-  json_t *ans = vk_msg_send (atoi (argv[0]), read_msg ());
-  assert (ans);
-  return 0; 
+  //json_t *ans = vk_msg_send (atoi (argv[0]), read_msg ());
+  //if (!ans) { return _ERROR; }
+  if (aio_msg_send (atoi (argv[0]), read_msg ()) < 0) { return _ERROR; }
+  return wait_all ();
 }
 
 int act_wall_post (char **argv, int argc) {
   if (argc != 1) {
     usage_wall_post ();
   }
-  json_t *ans = vk_wall_post (atoi (argv[0]), read_msg ());
-  assert (ans);
-  return 0;
+  if (aio_wall_post (atoi (argv[0]), read_msg ()) < 0) { return _ERROR; }
+  return wait_all ();
 }
 
 void usage_msg (void) {
@@ -228,22 +176,20 @@ int act_msg (char **argv, int argc) {
 }
 
 int act_user (char **argv, int argc) {
-  if (argc != 1) {
+  if (argc <= 0 || argc > 100) {
     usage_user ();
   }
-  int user_id = atoi (*argv);
-  if (user_id <= 0 || user_id >= 1000000000) {
-    usage_user ();
-  }
-  json_t *ans = vk_profile_get (user_id);
-  assert (ans);
-  int l = json_array_size (ans);
+  static int q[1000];
   int i;
-  for (i = 0; i < l; i++) {
-    struct user *r = vk_parse_user (json_array_get (ans, i));
-    assert (r);
-    print_user (0, r);
+  for (i = 0; i < argc; i++) {
+    q[i] = atoi (argv[i]);
+    if (q[i] <= 0 || q[i] >= 1000000000) {
+      usage_user ();
+    }
   }
+
+  if (aio_profiles_get (argc, q) < 0) { return _ERROR; }
+  while (work_read_write () == 0);
   return 0;
 }
 
@@ -262,7 +208,7 @@ void usage_act (void) {
   printf ("vkconcli <action>. Possible actions are:\n");
   printf ("\tauth\n");
   printf ("\tmsg (message, messages, u)\n");
-  printf ("\tuser (friend, u)\n");
+  printf ("\tuser (friend, u, users, friends, profiles)\n");
   printf ("\twall\n");
   exit (ERROR_COMMAND_LINE);
 }
@@ -312,6 +258,7 @@ int cur_token_len;
 #define TOKEN_UNEXPECTED -3
 
 #define WORK_CONSOLE 1
+#define WORK_NET 2
 
 #define cur_char std_buf[cur_pos]
 
@@ -370,7 +317,11 @@ int next_token (void) {
 int work_console_msg_to (int id) {
   NT;
   char *s = strndup (cur_token, cur_token_len);
-  vk_msg_send (id, s);
+  //vk_msg_send (id, s);
+  if (aio_msg_send (id, s) < 0) {
+    printf ("Not sent.\n");
+    return _ERROR;
+  }
   printf ("Msg to %d successfully sent:\n---\n%s\n---\n", id, s);
   free (s);
   return TOKEN_OK;
@@ -408,29 +359,55 @@ void work_console (void) {
   }
 }
 
+extern CURLM *multi_handle;
 int poll_work (void) {
-  struct pollfd s[1];
-  s[0].fd = 0;
-  s[0].events = POLLIN;
-  poll (s, 1, 1000);
+  static fd_set fdr, fdw, fde;
+  FD_ZERO (&fdr);
+  FD_ZERO (&fdw);
+  FD_ZERO (&fde);
+  FD_SET (STDIN_FILENO, &fdr);
+  int max_fd = 0;
+  int e;
+  fprintf (stderr, "max_fd = %d\n", max_fd);
+  if ((e = curl_multi_fdset (multi_handle, &fdr, &fdw, &fde, &max_fd)) != CURLE_OK) {
+    vk_error (ERROR_CURL, "Curl_error %d: %s", e, curl_multi_strerror (e));
+    return 0;
+  }
+  if (max_fd < 0) { max_fd = 0; }
+  long timeout = 1000;
+  if ((e = curl_multi_timeout (multi_handle, &timeout)) != CURLE_OK) {
+    vk_error (ERROR_CURL, "Curl_error %d: %s", e, curl_multi_strerror (e));
+    return 0;
+  }
+  if (timeout < 0) { timeout = 1000; }
+
+  struct timeval t = {
+    .tv_sec = timeout / 1000,
+    .tv_usec = timeout % 1000
+  };
+  if (select (max_fd + 1, &fdr, &fdw, &fde, &t) < 0) {
+    vk_error (ERROR_SYS, "System error %m");
+  }
   int r = 0;
-  if (s[0].revents & POLLIN) { r |= WORK_CONSOLE; }
+  if (FD_ISSET (0, &fdr)) { r |= WORK_CONSOLE; }
+  FD_CLR (0, &fdr);
+  r |= WORK_NET;
   return r;
 }
 
 void loop (void) {
   while (1) {
     int x = poll_work ();
-    if (x & WORK_CONSOLE) {
-      work_console ();
-    }
+    if (x & WORK_CONSOLE) { work_console (); }
+    if (x & WORK_NET) { work_read_write (); }
   }
 }
 
 int main (int argc, char **argv) {
   char c;
   char *dbf = 0;
-  while ((c = getopt (argc, argv, "vhl:o:a:RD:SNM:P")) != -1) {
+  int connections = 10;
+  while ((c = getopt (argc, argv, "vhl:o:a:RD:SNM:Pc:")) != -1) {
     switch (c) {
       case 'v': 
         verbosity ++;
@@ -462,6 +439,9 @@ int main (int argc, char **argv) {
       case 'P':
         persistent ++;
         break;
+      case 'c':
+        connections = atoi (optarg);
+        break;
       case 'h':
       default:
         usage ();
@@ -474,10 +454,18 @@ int main (int argc, char **argv) {
   assert (argc >= 0);
 
   if (!disable_net) {
-    assert (vk_net_init () >= 0);
+    if (connections <= 1) { connections = 2; }
+    if (connections >= 1000) { connections = 1000; }
+    if (vk_net_init (1, connections) < 0) {
+      fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
+      return current_error_code;
+    }
   }
   if (!disable_sql) {
-    assert (vk_db_init (dbf) >= 0);
+    if (vk_db_init (dbf) < 0) {
+      fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
+      return current_error_code;
+    }
   }
   if (persistent) {
     if (disable_net || disable_sql) {
@@ -489,5 +477,9 @@ int main (int argc, char **argv) {
   if (!argc) {
     usage ();
   }
-  return act (*argv, argv + 1, argc - 1);
+  if (act (*argv, argv + 1, argc - 1) < 0) {
+    fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
+    return current_error_code;
+  }
+  return 0;
 }
