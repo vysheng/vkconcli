@@ -368,7 +368,6 @@ int poll_work (void) {
   FD_SET (STDIN_FILENO, &fdr);
   int max_fd = 0;
   int e;
-  fprintf (stderr, "max_fd = %d\n", max_fd);
   if ((e = curl_multi_fdset (multi_handle, &fdr, &fdw, &fde, &max_fd)) != CURLE_OK) {
     vk_error (ERROR_CURL, "Curl_error %d: %s", e, curl_multi_strerror (e));
     return 0;
