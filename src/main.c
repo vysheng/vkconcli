@@ -395,6 +395,7 @@ int poll_work (void) {
 }
 
 void loop (void) {
+  aio_longpoll ();
   while (1) {
     int x = poll_work ();
     if (x & WORK_CONSOLE) { work_console (); }

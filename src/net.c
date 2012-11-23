@@ -138,6 +138,9 @@ int default_on_curl_fail (struct vk_curl_handle *handle UNUSED, int result) {
 }
 
 json_t *default_parse (struct vk_curl_handle *handle) {
+  if (verbosity >= 3) {
+    fprintf (stderr, "received answer %.*s\n", handle->buf.pos, handle->buf.buf);
+  }
   json_error_t error;
   json_t *ans = json_loadb (handle->buf.buf, handle->buf.pos, 0, &error);
   if (!ans) { 
@@ -171,6 +174,120 @@ void default_free (struct vk_curl_handle *handle UNUSED, void *data) {
 
 void do_nothing_free (struct vk_curl_handle *handle UNUSED, void *data UNUSED) {
 }
+/* }}} */
+
+/* {{{ Longpoll methods */
+
+char *longpoll_key;
+char *longpoll_server;
+int longpoll_ts;
+
+void *vk_longpoll_request_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) {
+  if (!(ans = json_object_get (ans, "response"))) {
+    vk_error (ERROR_UNEXPECTED_ANSWER, "No response field in answer");
+    return 0;
+  }
+  if (!json_object_get (ans, "key") || !json_object_get (ans, "server") || !json_object_get (ans, "ts")) {
+    vk_error (ERROR_UNEXPECTED_ANSWER, "No key/server/answer field in response for longpoll");
+    return 0;
+  }
+  longpoll_key = strdup (json_string_value (json_object_get (ans, "key")));
+  longpoll_server = strdup (json_string_value (json_object_get (ans, "server")));
+  longpoll_ts = json_integer_value (json_object_get (ans, "ts"));
+  aio_longpoll ();
+  return (void *)-1l;
+}
+
+int vk_longpoll_request_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
+  assert (data == (void *)-1l);
+  if (verbosity) {
+    fprintf (stderr, "got longpoll server\n");
+  }
+  return 0;
+}
+
+int aio_longpoll_request (void) {
+  if (!get_access_token()) { return 0; }
+  static char query[1001];  
+  snprintf (query, 1000, "https://api.vk.com/method/messages.getLongPollServer?access_token=%s", access_token);
+
+  struct vk_methods methods = {
+    .parse = default_parse,
+    .on_end = vk_longpoll_request_aio,
+    .finalize = vk_longpoll_request_finalize,
+    .free = do_nothing_free
+  };
+  struct vk_curl_handle *handle = get_handle ();
+  if (!handle) { return _ERROR; }
+  return do_query (handle, query, &methods, 0, 0);
+}
+
+void *vk_longpoll_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) {
+  if (json_object_get (ans, "failed")) {
+    if (verbosity) {
+      fprintf (stderr, "longpoll key expired\n");
+    }
+    free (longpoll_key); longpoll_key = 0;
+    free (longpoll_server); longpoll_server = 0;
+    longpoll_ts = 0;
+    aio_longpoll_request ();
+    return (void *)-2l;
+  }
+  if (!json_object_get (ans, "ts") || !json_object_get (ans, "updates")) {
+    vk_error (ERROR_UNEXPECTED_ANSWER, "No ts/updates in response from longpoll server");
+    return 0;
+  }
+  longpoll_ts = json_integer_value (json_object_get (ans, "ts"));
+  ans = json_object_get (ans, "updates");
+  int n = json_array_size (ans);
+  int i;
+  for (i = 0; i < n; i++) {
+    json_t *r = json_array_get (ans, i);
+    if (!r) { continue; }
+    int k = json_integer_value (json_array_get (r, 0));
+    if (k == 4) {
+      struct message *msg = vk_parse_message_longpoll (r);
+      if (!msg) { return 0; }
+      if (!disable_sql) {
+        if (vk_db_insert_message (msg) < 0) {
+          free (msg);
+          return 0;
+        }
+      }
+      print_message (0, msg);
+    }
+  }
+  aio_longpoll ();
+  return (void *)-1l;
+}
+
+int vk_longpoll_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
+  assert (data == (void *)-1l || data == (void *)-2l);
+  if (verbosity) {
+    fprintf (stderr, "got longpoll answer\n");
+  }
+  return 0;
+}
+
+int aio_longpoll (void) {
+  if (!get_access_token()) { return 0; }
+  if (!longpoll_server || !longpoll_key) {
+    return aio_longpoll_request ();
+  }
+  static char query[1001];
+  snprintf (query, 1000, "http://%s?act=a_check&key=%s&ts=%d&wait=25&mode=2", longpoll_server, longpoll_key, longpoll_ts);
+
+  struct vk_methods methods = {
+    .parse = default_parse,
+    .on_end = vk_longpoll_aio,
+    .finalize = vk_longpoll_finalize,
+    .free = do_nothing_free
+  };
+  struct vk_curl_handle *handle = get_handle ();
+  if (!handle) { return _ERROR; }
+  return do_query (handle, query, &methods, 0, 0);
+}
+
 /* }}} */
 
 /* {{{ Auth methods */
@@ -493,7 +610,7 @@ int work_read_write (void) {
       return _FATAL_ERROR;
     }
   }
-  assert (nn == working_handle_count);
+  //assert (nn == working_handle_count);
   return cc;
 }
 /* }}} */

@@ -8,6 +8,21 @@
 
 #include "structures-auto.h"
 
+struct message *vk_parse_message_longpoll (json_t *J) {
+  struct message *r = malloc (sizeof (*r));
+  r->id = json_integer_value (json_array_get (J, 1));
+  int flags = json_integer_value (json_array_get (J, 2));
+  r->uid = json_integer_value (json_array_get (J, 3));
+  r->date = json_integer_value (json_array_get (J, 4));
+  r->read_state = !(flags & 1);
+  r->out = (flags & 2) != 0;
+  r->title = strdup (json_string_value (json_array_get (J, 5)));
+  r->body = strdup (json_string_value (json_array_get (J, 6)));
+  r->chat_id = (flags & 16) ? -1 : 0;
+  r->deleted = (flags & 128) != 0;
+  r->emoji = 0;
+  return r;
+}
 
 void print_spaces (int level) {
 	int i;

@@ -11,4 +11,5 @@ int aio_msg_send (int id, const char *msg);
 int aio_wall_post (int id, const char *msg);
 int aio_auth (const char *username, const char *password);
 int work_read_write (void);
+int aio_longpoll (void);
 #endif
