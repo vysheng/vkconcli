@@ -5,8 +5,11 @@
 #include <string.h>
 #include <assert.h>
 #include "tree.h"
-
+#include "net.h"
 #include "structures-auto.h"
+
+#include <time.h>
+#include <curl/curl.h>
 
 struct message *vk_parse_message_longpoll (json_t *J) {
   struct message *r = malloc (sizeof (*r));
@@ -29,13 +32,31 @@ void print_spaces (int level) {
 	for (i = 0; i < level; i++) printf (" ");
 }
 
+extern int disable_sql;
+extern CURL *curl_handle;
+
 
 
 void print_message (int level, const struct message *msg) {
   print_spaces (level);
-  printf ("Message #%d %s user %d\n", msg->id, msg->out ? "to" : "from", msg->uid);
+  struct user *user = 0;
+  if (!disable_sql) {
+    user = vk_db_lookup_user (msg->uid);
+    if (!user) {
+      aio_profiles_get (1, &msg->uid, 1);
+    }
+  }
+  if (!user) {
+    printf ("Message #%d %s user %d\n", msg->id, msg->out ? "to" : "from", msg->uid);
+  } else {
+    printf ("Message #%d %s user %d (%s %s)\n", msg->id, msg->out ? "to" : "from", msg->uid, user->first_name, user->last_name);
+  }
+  struct tm *lctime = localtime ((void *)&(msg->date));
   print_spaces (level + 1);
-  printf ("Created at %d, state %s\n", msg->date, msg->read_state ? "read" : "unread");
+  printf ("Created at [%d-%d-%d %d:%d:%d], state %s\n", 
+    lctime->tm_year + 1900, lctime->tm_mon + 1, lctime->tm_mday, 
+    lctime->tm_hour, lctime->tm_min, lctime->tm_sec,
+    msg->read_state ? "read" : "unread");
   print_spaces (level + 1);
   if (msg->chat_id <= 0) {
     printf ("No chat\n");

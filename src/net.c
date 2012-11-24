@@ -365,7 +365,7 @@ int vk_users_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   return 0;
 }
 
-int aio_profiles_get (int num, int *ids) {
+int aio_profiles_get (int num, const int *ids, int silent) {
   if (!get_access_token()) { return 0; }
 
   if (num <= 0 || num >= 100) {
@@ -390,6 +390,9 @@ int aio_profiles_get (int num, int *ids) {
     .on_end = vk_users_get_aio,
     .finalize = vk_users_finalize
   };
+  if (silent) {
+    methods.finalize = 0;
+  }
   struct vk_curl_handle *handle = get_handle ();
   if (!handle) { return _ERROR; }
   return do_query (handle, query, &methods, 0, 0);

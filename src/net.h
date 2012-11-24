@@ -6,7 +6,7 @@ json_t *vk_msg_send (int id, const char *msg);
 json_t *vk_wall_post (int id, const char *msg);
 int vk_net_init (int create_multi, int handle_count);
 int aio_msgs_get (int offset, int limit, int reverse, int out);
-int aio_profiles_get (int num, int *ids);
+int aio_profiles_get (int num, const int *ids, int silent);
 int aio_msg_send (int id, const char *msg);
 int aio_wall_post (int id, const char *msg);
 int aio_auth (const char *username, const char *password);

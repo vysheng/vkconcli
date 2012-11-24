@@ -188,7 +188,7 @@ int act_user (char **argv, int argc) {
     }
   }
 
-  if (aio_profiles_get (argc, q) < 0) { return _ERROR; }
+  if (aio_profiles_get (argc, q, 0) < 0) { return _ERROR; }
   while (work_read_write () == 0);
   return 0;
 }
