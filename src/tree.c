@@ -18,9 +18,7 @@ int db_check_tables (void) {
 }
 
 int db_open (const char *filename) {
-  if (verbosity >= 1) {
-    fprintf (stderr, "Opening database %s\n", filename);
-  }
+  vk_log (1, "Opening database %s\n", filename);
   int r = sqlite3_open (filename, &db_handle);
   if (r != SQLITE_OK) {
     vk_error (ERROR_SQLITE, "SQLite error %s", db_handle ? sqlite3_errmsg (db_handle) : "Critical fail");

@@ -12,6 +12,7 @@
 #include "net.h"
 #include "structures-auto.h"
 #include "structures.h"
+#include "global-vars.h"
 
 #define CLIENT_ID 2870218
 #define CLIENT_ID_STR #CLIENT_ID
@@ -22,16 +23,10 @@
 
 CURL *curl_handle;
 CURLM *multi_handle;
-int handle_count;
 struct vk_curl_handle *all_handles;
-int working_handle_count;
-extern int disable_sql;
 
-#define BUF_SIZE (1 << 23)
-char buf[BUF_SIZE];
-//int buf_ptr;
-extern int verbosity;
-char *access_token;
+//#define BUF_SIZE (1 << 23)
+//char buf[BUF_SIZE];
 
 struct curl_buf {
   int pos;
@@ -60,14 +55,7 @@ struct vk_curl_handle {
   void *extra;
 };
 
-struct curl_buf one_buf = {
-  .pos = 0,
-  .len = 0,
-  .buf = 0,
-  .error = 0
-};
-CURL *vk_curl_init (void);
-
+/* {{{ CURL handle */
 struct vk_curl_handle *get_handle (void) {
   int i;
   for (i = 0; i < handle_count; i++) {
@@ -118,18 +106,7 @@ int do_query (struct vk_curl_handle *handle, const char *query, struct vk_method
   handle->flags |= 1;
   return 0;
 }
-
-char *get_access_token (void) {
-  if (!access_token) {
-    access_token = getenv ("vk_access_token");
-    if (!access_token) {
-      vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
-      return 0;
-    }
-    access_token = strdup (access_token);    
-  }
-  return access_token;
-}
+/* }}} */
 
 /* {{{ Default curl methods */
 int default_on_curl_fail (struct vk_curl_handle *handle UNUSED, int result) {
@@ -138,9 +115,7 @@ int default_on_curl_fail (struct vk_curl_handle *handle UNUSED, int result) {
 }
 
 json_t *default_parse (struct vk_curl_handle *handle) {
-  if (verbosity >= 3) {
-    fprintf (stderr, "received answer %.*s\n", handle->buf.pos, handle->buf.buf);
-  }
+  vk_log (3, "received answer %.*s\n", handle->buf.pos, handle->buf.buf);
   json_error_t error;
   json_t *ans = json_loadb (handle->buf.buf, handle->buf.pos, 0, &error);
   if (!ans) { 
@@ -151,10 +126,8 @@ json_t *default_parse (struct vk_curl_handle *handle) {
     } 
     return 0; 
   }
-  
-  if (verbosity >= 2) { 
-    fprintf (stderr, "Answer parsed\n"); 
-  } 
+
+  vk_log (2, "Answer parsed\n"); 
   
   if (json_object_get (ans, "error")) {
     json_t *e = json_object_get (ans, "error"); 
@@ -200,14 +173,15 @@ void *vk_longpoll_request_aio (struct vk_curl_handle *handle UNUSED, json_t *ans
 
 int vk_longpoll_request_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   assert (data == (void *)-1l);
-  if (verbosity) {
-    fprintf (stderr, "got longpoll server\n");
-  }
+  vk_log (1, "got longpoll server\n");
   return 0;
 }
 
 int aio_longpoll_request (void) {
-  if (!get_access_token()) { return 0; }
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
   static char query[1001];  
   snprintf (query, 1000, "https://api.vk.com/method/messages.getLongPollServer?access_token=%s", access_token);
 
@@ -224,9 +198,7 @@ int aio_longpoll_request (void) {
 
 void *vk_longpoll_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) {
   if (json_object_get (ans, "failed")) {
-    if (verbosity) {
-      fprintf (stderr, "longpoll key expired\n");
-    }
+    vk_log (1, "longpoll key expired\n");
     free (longpoll_key); longpoll_key = 0;
     free (longpoll_server); longpoll_server = 0;
     longpoll_ts = 0;
@@ -263,14 +235,15 @@ void *vk_longpoll_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) {
 
 int vk_longpoll_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   assert (data == (void *)-1l || data == (void *)-2l);
-  if (verbosity) {
-    fprintf (stderr, "got longpoll answer\n");
-  }
+  vk_log (1, "got longpoll answer\n");
   return 0;
 }
 
 int aio_longpoll (void) {
-  if (!get_access_token()) { return 0; }
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
   if (!longpoll_server || !longpoll_key) {
     return aio_longpoll_request ();
   }
@@ -301,7 +274,14 @@ void *vk_auth_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) {
 }
 
 int vk_auth_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
-  printf ("%s", (char *)data);
+  if (access_token_file) {
+    FILE *f = fopen (access_token_file, "wt");
+    if (f) {
+      fprintf (f, "%s", (char *)data);
+    }
+  } else {
+    printf ("%s", (char *)data);
+  }
   access_token = strdup (data);
   return 0;
 }
@@ -366,7 +346,10 @@ int vk_users_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
 }
 
 int aio_profiles_get (int num, const int *ids, int silent) {
-  if (!get_access_token()) { return 0; }
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
 
   if (num <= 0 || num >= 100) {
     vk_error (ERROR_COMMAND_LINE, "invalid number of users");
@@ -383,7 +366,7 @@ int aio_profiles_get (int num, const int *ids, int silent) {
       k += sprintf (query + k, ",%d", ids[i]);
     }
   }
-  k += sprintf (query + k, "&fields=uid,first_name,last_name,nickname,screen_name,sex,bdate,city,country,timezone,photo,photo_medium,photo_big,has_mobile,rate,contacts,education,online,counters,can_post,can_see_all_posts,can_write_private_message,activity,last_seen,relation,wall_comments,relatives&access_token=%s", get_access_token ());
+  k += sprintf (query + k, "&fields=uid,first_name,last_name,nickname,screen_name,sex,bdate,city,country,timezone,photo,photo_medium,photo_big,has_mobile,rate,contacts,education,online,counters,can_post,can_see_all_posts,can_write_private_message,activity,last_seen,relation,wall_comments,relatives&access_token=%s", access_token);
   
   struct vk_methods methods = {
     .parse = default_parse,
@@ -406,23 +389,24 @@ void *vk_wall_post_check_aio (struct vk_curl_handle *handle UNUSED, json_t *ans)
     vk_error (ERROR_UNEXPECTED_ANSWER, "No response field in answer");
     return 0;
   }
-  if (verbosity >= 2) {
-    fprintf (stderr, "Wall post id is %d\n", (int)json_integer_value (json_object_get (ans, "post_id")));
-  }
+  vk_log (2, "Wall post id is %d\n", (int)json_integer_value (json_object_get (ans, "post_id")));
   return (void *)(-1l);
 }
 
 int vk_wall_post_check_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   assert (data == (void *)(-1l));
-  fprintf (stderr, "Successfully sent\n");
+  printf ("Successfully sent\n");
   return 0;
 }
 
 int aio_wall_post (int id, const char *msg) {
-  if (!get_access_token()) { return 0; }
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
   static char query[10001];
   char *q = curl_easy_escape (curl_handle, msg, 0);
-  snprintf (query, 10000, "https://api.vk.com/method/wall.post?owner_id=%d&message=%s&access_token=%s", id, q, get_access_token ());
+  snprintf (query, 10000, "https://api.vk.com/method/wall.post?owner_id=%d&message=%s&access_token=%s", id, q, access_token);
   curl_free (q);
  
   struct vk_methods methods = {
@@ -443,23 +427,24 @@ void *vk_msg_check_send_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) 
     vk_error (ERROR_UNEXPECTED_ANSWER, "No response field in answer");
     return 0;
   }
-  if (verbosity >= 2) {
-    fprintf (stderr, "Message id is %d\n", (int)json_integer_value (ans));
-  }
+  vk_log (2, "Message id is %d\n", (int)json_integer_value (ans));
   return (void *)(-1l);
 }
 
 int vk_msg_check_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   assert (data == (void *)(-1l));
-  fprintf (stderr, "Successfully sent\n");
+  printf ("Successfully sent\n");
   return 0;
 }
 
 int aio_msg_send (int id, const char *msg) {
-  if (!get_access_token()) { return 0; }
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
   static char query[10001];
   char *q = curl_easy_escape (curl_handle, msg, 0);
-  snprintf (query, 10000, "https://api.vk.com/method/messages.send?uid=%d&message=%s&access_token=%s", id, q, get_access_token ());
+  snprintf (query, 10000, "https://api.vk.com/method/messages.send?uid=%d&message=%s&access_token=%s", id, q, access_token);
   curl_free (q);
  
   struct vk_methods methods = {
@@ -516,7 +501,10 @@ int vk_msgs_finalize (struct vk_curl_handle *handle, void *data) {
 }
 
 int aio_msgs_get (int offset, int limit, int reverse, int out) {
-  if (!get_access_token()) { return 0; }
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
 
   if (limit <= 0) {
     limit = 100;
@@ -529,7 +517,7 @@ int aio_msgs_get (int offset, int limit, int reverse, int out) {
   }
 
   static char query[1001];
-  snprintf (query, 1000, "https://api.vk.com/method/messages.get?out=%d&offset=%d&count=%d&access_token=%s", out, offset, limit, get_access_token ());
+  snprintf (query, 1000, "https://api.vk.com/method/messages.get?out=%d&offset=%d&count=%d&access_token=%s", out, offset, limit, access_token);
   
   struct vk_methods methods = {
     .parse = default_parse,

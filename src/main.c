@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,31 +18,33 @@
 #include <jansson.h>
 
 #include <sqlite3.h>
+#include <SDL/SDL.h>
+#include <libconfig.h>
 
 #include "structures.h"
 #include "net.h"
 #include "vk_errors.h"
 #include "tree.h"
+#include "global-vars.h"
 
 #define MAX_MESSAGE_LEN 1000
 
 
-int verbosity;
 
 int persistent;
 
 int limit;
 int offset;
-char *access_token;
 int reverse;
 
-int disable_sql;
-int disable_net;
 
-int max_depth = 2;
 
 char *current_error;
 int current_error_code;
+
+
+
+config_t conf;
 
 void vk_error (int error_code, const char *format, ...) {
   current_error_code = error_code;
@@ -56,11 +59,20 @@ void vk_error (int error_code, const char *format, ...) {
   }
 }
 
+void vk_log (int level, const char *format, ...) {
+  if (level <= verbosity) {
+    va_list l;
+    va_start (l, format);
+    vfprintf (stderr, format, l);
+  }
+}
+
 int wait_all (void) {
   int t = 0;
   while ((t = work_read_write ()) == 0);
   return t;
 }
+
 void usage_auth (void) {
   printf ("vkconcli auth <username>\n");
   exit (ERROR_COMMAND_LINE);
@@ -68,13 +80,30 @@ void usage_auth (void) {
 
 
 
-int act_auth (char **argv, int argc) {
-  if (argc != 1) {
+int is_linebreak (char c);
+
+int act_auth (char **argv UNUSED, int argc) {
+  if (argc != 0) {
     usage_auth ();
   }
-  static char passwd[1000];
-  strncpy (passwd, getpass ("Password: "), 999);
-  if (aio_auth (argv[0], passwd) < 0) { return _ERROR; }
+  while (!username) {
+    printf ("Login (email): ");
+    if (scanf ("%as", &username) != 1) {
+      username = 0;
+    }
+    if (username && !strlen (username)) {
+      free (username);
+      username = 0;
+    }
+  }
+  while (!password) {
+    password = getpass ("Password: ");
+    if (!strlen (password)) {
+      free (password);
+      password = 0;
+    }
+  }
+  if (aio_auth (username, password) < 0) { return _ERROR; }
   return wait_all (); 
 }
 
@@ -131,8 +160,6 @@ int act_msg_send (char **argv, int argc) {
   if (argc != 1) {
     usage_msg_read ();
   }
-  //json_t *ans = vk_msg_send (atoi (argv[0]), read_msg ());
-  //if (!ans) { return _ERROR; }
   if (aio_msg_send (atoi (argv[0]), read_msg ()) < 0) { return _ERROR; }
   return wait_all ();
 }
@@ -394,21 +421,81 @@ int poll_work (void) {
   return r;
 }
 
-void loop (void) {
+int loop (void) {
   aio_longpoll ();
   while (1) {
     int x = poll_work ();
     if (x & WORK_CONSOLE) { work_console (); }
     if (x & WORK_NET) { work_read_write (); }
   }
+  return 0;
+}
+
+int loop2 (void) {
+  while (1) {
+    int x = poll_work ();
+    if (x & WORK_CONSOLE} { work_console (); }
+    if (x & WORK_NET) { work_net (); }
+    if (!(x & WORK_CONSOLE) && !working_handle_count) { return 0; }
+  }
+}
+
+char *makepath (const char *path) {
+  assert (path);
+  if (*path == '/') { return strdup (path); }
+  else { 
+    char *s; 
+    const char *h = getenv ("HOME");
+    assert (asprintf (&s, "%s/%s", h, path) >= 0);
+    return s;
+  }
+}
+
+int load_access_token (void) {
+  if (access_token) { return 1;}
+  config_setting_t *conf_setting;
+  if (!access_token) {
+    conf_setting = config_lookup (&conf, "access_token");
+    if (conf_setting) {
+      access_token = strdup (config_setting_get_string (conf_setting));
+      assert (access_token);
+    }
+    conf_setting = config_lookup (&conf, "access_token_file");
+    if (conf_setting) {
+      access_token_file = makepath (config_setting_get_string (conf_setting));
+      if (!access_token) {
+        FILE *f = fopen (access_token_file, "rt");
+        if (f) {
+          if (fscanf (f, "%as", &access_token) < 1) {
+            access_token = 0;
+          }
+          fclose (f);
+        }
+      }
+    }
+  }
+  if (!access_token) {
+    access_token = getenv ("vk_access_token");
+    if (!access_token) {
+      vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+      return 0;
+    }
+    access_token = strdup (access_token);    
+  }
+  return 1;
 }
 
 int main (int argc, char **argv) {
   char c;
-  char *dbf = 0;
   int connections = 10;
-  while ((c = getopt (argc, argv, "vhl:o:a:RD:SNM:Pc:")) != -1) {
+  while ((c = getopt (argc, argv, "vhl:o:a:RD:M:Pc:A:S:N:m:u:")) != -1) {
     switch (c) {
+      case 'u':
+        username = strdup (optarg);
+        break;
+      case 'p':
+        password = strdup (optarg);
+        break;
       case 'v': 
         verbosity ++;
         break;
@@ -425,13 +512,37 @@ int main (int argc, char **argv) {
         reverse ++;
         break;
       case 'D':
-        dbf = optarg;
+        db_file_name = optarg;
+        break;
+      case 'A':
+        if (!strcmp (optarg, "disable")) {
+          disable_audio = 1;
+        } else if (!strcmp (optarg, "enable")) {
+          disable_audio = 0;
+        } else {
+          fprintf (stderr, "enable/disable expected\n");
+          return 2;
+        }
         break;
       case 'S':
-        disable_sql ++;
+        if (!strcmp (optarg, "disable")) {
+          disable_sql = 1;
+        } else if (!strcmp (optarg, "enable")) {
+          disable_sql = 0;
+        } else {
+          fprintf (stderr, "enable/disable expected\n");
+          return 2;
+        }
         break;
       case 'N':
-        disable_net ++;
+        if (!strcmp (optarg, "disable")) {
+          disable_net = 1;
+        } else if (!strcmp (optarg, "enable")) {
+          disable_net = 0;
+        } else {
+          fprintf (stderr, "enable/disable expected\n");
+          return ERROR_COMMAND_LINE;
+        }
         break;
       case 'M':
         max_depth = atoi (optarg);
@@ -439,8 +550,11 @@ int main (int argc, char **argv) {
       case 'P':
         persistent ++;
         break;
-      case 'c':
+      case 'm':
         connections = atoi (optarg);
+        break;
+      case 'c':
+        config_file_name = optarg;
         break;
       case 'h':
       default:
@@ -448,6 +562,74 @@ int main (int argc, char **argv) {
     }
   }
 
+  config_file_name = makepath (config_file_name);
+  config_init (&conf);
+
+  if (config_read_file (&conf, config_file_name) != CONFIG_TRUE) {
+    fprintf (stderr, "error parsing config: %s\n", config_error_text (&conf));
+    return ERROR_CONFIG;
+  }
+
+  config_setting_t *conf_setting;
+  if (disable_net == -1) {
+    conf_setting = config_lookup (&conf, "disable_net");
+    if (!conf_setting) {
+      disable_net = 0;
+    } else {
+      disable_net = config_setting_get_bool (conf_setting);
+    }
+  }
+
+  if (disable_sql == -1) {
+    conf_setting = config_lookup (&conf, "disable_sql");
+    if (!conf_setting) {
+      disable_sql = 0;
+    } else {
+      disable_sql = config_setting_get_bool (conf_setting);
+    }
+  }
+
+  if (disable_audio == -1) {
+    conf_setting = config_lookup (&conf, "disable_audio");
+    if (!conf_setting) {
+      disable_audio = 0;
+    } else {
+      disable_audio = config_setting_get_bool (conf_setting);
+    }
+  }
+
+  conf_setting = config_lookup (&conf, "default_history_limit");
+  if (conf_setting) {
+    default_history_limit = config_setting_get_int (conf_setting);
+  }
+
+  if (!username) {
+    conf_setting = config_lookup (&conf, "username");
+    if (conf_setting) {
+      username = strdup (config_setting_get_string (conf_setting));
+    }
+  }
+
+  if (!password) {
+    conf_setting = config_lookup (&conf, "password");
+    if (conf_setting) {
+      username = strdup (config_setting_get_string (conf_setting));
+    }
+  }
+
+  if (!disable_net) {
+    load_access_token ();
+  }
+  
+  if (!disable_sql && !db_file_name) {
+    conf_setting = config_lookup (&conf, "db_file");
+    if (conf_setting) {
+      db_file_name = strdup (config_setting_get_string (conf_setting));
+    }
+  }
+  if (db_file_name) {
+    db_file_name = makepath (db_file_name);
+  }
   argc -= optind;
   argv += optind;
   
@@ -462,9 +644,15 @@ int main (int argc, char **argv) {
     }
   }
   if (!disable_sql) {
-    if (vk_db_init (dbf) < 0) {
+    if (vk_db_init (db_file_name) < 0) {
       fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
       return current_error_code;
+    }
+  }
+  if (!disable_audio) {
+    if (SDL_Init (SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
+      fprintf (stderr, "Sdl init error %s\n", SDL_GetError ());
+      return ERROR_SDL;
     }
   }
   if (persistent) {
@@ -472,7 +660,9 @@ int main (int argc, char **argv) {
       fprintf (stderr, "In persistent mode sql and net should be on\n");
       return ERROR_COMMAND_LINE;
     }
-    loop ();
+    if (loop () < 0) {
+      fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
+    }
   }
   if (!argc) {
     usage ();

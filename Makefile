@@ -1,12 +1,12 @@
 CFLAGS=-O2 -Wall -Wextra -Werror -c
-LDFLAGS=-l:libcurl.so -lm -l:libjansson.so -l:libsqlite3.so
-HEADERS= src/structures.h src/net.h src/tree.h src/vk_errors.h src/md5.h src/structures-auto.h
+LDFLAGS=-l:libcurl.so -lm -l:libjansson.so -l:libsqlite3.so -l:libSDL.so -l:libconfig.so
+HEADERS= src/structures.h src/net.h src/tree.h src/vk_errors.h src/md5.h src/structures-auto.h src/global-vars.h
 AUTOGEN_SRC= src/conf/messages.conf src/conf/users.conf
 
 all: bin/vkconcli
 
-bin/vkconcli: obj/main.o obj/md5.o obj/structures.o obj/net.o obj/tree.o obj/structures-auto.o
-	cc ${LDFLAGS} obj/main.o obj/md5.o obj/structures.o obj/net.o obj/tree.o obj/structures-auto.o -o bin/vkconcli
+bin/vkconcli: obj/main.o obj/md5.o obj/structures.o obj/net.o obj/tree.o obj/structures-auto.o obj/global-vars.o
+	cc ${LDFLAGS} obj/main.o obj/md5.o obj/structures.o obj/net.o obj/tree.o obj/structures-auto.o obj/global-vars.o -o bin/vkconcli
 
 obj/main.o: src/main.c ${HEADERS}
 	cc ${CFLAGS} src/main.c -o obj/main.o
@@ -25,6 +25,9 @@ obj/structures.o: src/structures.c ${HEADERS}
 
 obj/structures-auto.o: src/structures-auto.c ${HEADERS}
 	cc ${CFLAGS} src/structures-auto.c -o obj/structures-auto.o
+
+obj/global-vars.o: src/global-vars.c ${HEADERS}
+	cc ${CFLAGS} src/global-vars.c -o obj/global-vars.o
 
 src/structures-auto.h: src/structures-auto.c
 
