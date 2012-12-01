@@ -28,10 +28,11 @@
 #include "global-vars.h"
 
 #define MAX_MESSAGE_LEN 1000
-
+#define MAX_DEPTH 10
 
 
 int persistent;
+int one_shot;
 
 int limit;
 int offset;
@@ -54,7 +55,7 @@ void vk_error (int error_code, const char *format, ...) {
   vsnprintf (buf, 9999, format, l);
   if (current_error) { free (current_error); }
   current_error = strdup (buf);
-  if (verbosity) {
+  if (verbosity >= 1) {
     fprintf (stderr, "%s\n", current_error);
   }
 }
@@ -279,6 +280,9 @@ int std_buf_pos;
 int cur_pos;
 char *cur_token;
 int cur_token_len;
+int cur_token_flags;
+int preargc;
+char **preargv;
 #define TOKEN_NEED_MORE_BYTES -1
 #define TOKEN_ERROR -2
 #define TOKEN_OK 1 
@@ -286,6 +290,7 @@ int cur_token_len;
 
 #define WORK_CONSOLE 1
 #define WORK_NET 2
+#define READ_CONSOLE 4
 
 #define cur_char std_buf[cur_pos]
 
@@ -297,42 +302,115 @@ int is_linebreak (char c) {
   return (c == 10 || c == 13);
 }
 
-int next_token (void) {
-  while (is_whitespace (cur_char)) { cur_pos ++; }
-  if (!cur_char) { return TOKEN_NEED_MORE_BYTES; }
-  char c = cur_char;
-  char *p = std_buf + cur_pos;
-  if (c != '"') {
-    while (!is_whitespace (cur_char) && cur_char) { cur_pos ++; }
-    if (!cur_char) return TOKEN_NEED_MORE_BYTES;
-    cur_token = p;
-    cur_token_len = std_buf + cur_pos - p;
-    return TOKEN_OK;
-  } else {
-    if (!std_buf[cur_pos + 1] || !std_buf[cur_pos + 2]) return TOKEN_NEED_MORE_BYTES;
-    if (std_buf[cur_pos + 1] == '"' && std_buf[cur_pos + 2] == '"') {
-      p += 3;
-      cur_pos += 3;
-      while (cur_char && memcmp ("\"\"\"", std_buf + cur_pos, 3)) { cur_pos ++; }
-      if (!cur_char) { return TOKEN_NEED_MORE_BYTES; }
-      cur_token = p;
-      cur_token_len = std_buf + cur_pos - p;
-      cur_pos += 3;
-      return TOKEN_OK;
-    } else {
-      p ++;
-      cur_pos ++;
-      while (!is_linebreak (cur_char) && cur_char != '"' && cur_char) { cur_pos ++; }
-      if (!cur_char) { return TOKEN_NEED_MORE_BYTES; }
-      if (cur_char == '"') {
-        cur_token = p;
-        cur_token_len = std_buf + cur_pos - p;
-        cur_pos ++;
-        return TOKEN_OK;
-      }
-      return TOKEN_ERROR;
+struct token {
+  char *str;
+  int len;
+  int flags;
+  struct token *next;
+};
+
+struct token *tokens;
+struct token *last_token;
+struct token *ctoken;
+
+int parse_all_tokens (char *name, int depth, int flags);
+// name should be duplicated
+void add_token (char *name, int flags, int depth) {
+  if (!(flags & 1) && depth == MAX_DEPTH) {
+    flags |= 3;
+  }
+  if (!(flags & 1)) {
+    char *res = vk_alias_get (name);
+    if (res) {
+      free (name);
+      parse_all_tokens (res, depth, 0);
+      free (res);
+      return;
     }
   }
+  struct token *token = malloc (sizeof (*token));
+  token->str = name;
+  token->len = strlen (name);
+  token->flags = flags;
+  token->next = 0;
+  if (last_token) {
+    last_token->next = token;
+    last_token = token;
+  } else {
+    assert (!tokens);
+    ctoken = tokens = last_token = token;
+  }
+}
+
+int parse_all_tokens (char *name, int depth, int flags) {
+  #define c name[pos]
+  int pos = 0;
+  while (c) {
+    while (is_whitespace (c)) { pos ++; }
+    if (!c) { return pos; }
+    const char *p = name + pos;
+    if (c != '"') {
+      while (!is_whitespace (c) && c) { pos ++; }
+      add_token (strndup (p, pos + name - p), 0, depth + 1);
+      if (!c) {
+        return pos;
+      }
+    } else {
+      if (name[pos + 1] == '"' && name[pos + 2] == '"') {
+        pos += 3;
+        p += 3;
+        while (c && memcmp ("\"\"\"", name + pos, 3)) { pos ++; }
+        if (!c && !(flags & 1)) {
+          fprintf (stderr, "incorrect token `%s`\n", p - 3); 
+        } else {
+          if (c) {
+            add_token (strndup (p, pos + name - p), 1, depth + 1);
+          } else {
+            return p - name - 3;
+          }
+        }
+      } else {
+        p ++;
+        pos ++;
+        while (!is_linebreak (c) && c != '"' && c) { pos ++; }
+        if (c == '"') {
+          add_token (strndup (p, pos + name - p), 1, depth + 1);
+        } else {
+          if (c || (!c && !(flags & 1))) {
+            fprintf (stderr, "incorrent token `%.*s`\n", (int)(pos + name - p + 1), p);
+          } else {
+            return p - name - 1;
+          }
+        }
+      }
+    }
+  }
+  return pos;
+  #undef c
+}
+
+void free_unused_tokens (void) {
+  while (tokens != ctoken) {
+    free (tokens->str);
+    struct token *t = tokens;
+    tokens = tokens->next;
+    free (t);
+  }
+  if (!tokens) {
+    last_token = 0;
+  }
+}
+
+int next_token (void) {
+  if (!ctoken) {
+    return TOKEN_NEED_MORE_BYTES;
+  }
+  cur_token = ctoken->str;
+  cur_token_len = ctoken->len;
+  cur_token_flags = ctoken->flags;
+  vk_log (2, "next_token = %s\n", cur_token);
+  ctoken = ctoken->next;
+  return TOKEN_OK;
 }
 
 #define NT \
@@ -361,10 +439,34 @@ int work_console_msg (void) {
   return work_console_msg_to (n);
 }
 
+int work_console_history (void) {
+  return TOKEN_OK;
+}
+
+int work_console_alias (void) {
+  NT;
+  static char *name;
+  if (name) { free (name); }
+  name = strndup (cur_token, cur_token_len);
+  NT;
+  char *text = strndup (cur_token, cur_token_len);
+  if (vk_alias_add (name, text) < 0) {
+    free (text);
+    return _ERROR;
+  } else {
+    free (text);
+    return TOKEN_OK;
+  }
+}
+
 int work_console_main (void) {
   NT;
   if (cur_token_len == 3 && !strncmp ("msg", cur_token, 3)) {
     return work_console_msg ();
+  } else if (cur_token_len == 7 && !strncmp ("history", cur_token, 7)) {
+    return work_console_history ();
+  } else if (cur_token_len == 5 && !strncmp ("alias", cur_token, 5)) {
+    return work_console_alias ();
   }
   return TOKEN_UNEXPECTED;
 }
@@ -376,13 +478,17 @@ void work_console (void) {
   }
   std_buf_pos += x;
   std_buf[std_buf_pos] = 0;
-  int r = work_console_main ();
-  if (r != TOKEN_NEED_MORE_BYTES) {
-    memcpy (std_buf, std_buf + cur_pos, std_buf_pos - cur_pos + 1);
-    std_buf_pos -= cur_pos;
-    cur_pos = 0;
-  } else {
-    cur_pos = 0;
+  int l = parse_all_tokens (std_buf, -1, 1);
+  memcpy (std_buf, std_buf + l, std_buf_pos - l + 1);
+  std_buf_pos -= l;
+  while (1) {
+    int r = work_console_main ();
+    if (r != TOKEN_NEED_MORE_BYTES) {
+      free_unused_tokens ();
+    } else {
+      ctoken = tokens;
+      break;
+    }
   }
 }
 
@@ -421,8 +527,13 @@ int poll_work (void) {
   return r;
 }
 
+void work_console_pre (void) {
+  while (work_console_main () != TOKEN_NEED_MORE_BYTES);
+}
+
 int loop (void) {
   aio_longpoll ();
+  work_console_pre ();
   while (1) {
     int x = poll_work ();
     if (x & WORK_CONSOLE) { work_console (); }
@@ -432,18 +543,20 @@ int loop (void) {
 }
 
 int loop2 (void) {
+  work_console_pre ();
   while (1) {
     int x = poll_work ();
-    if (x & WORK_CONSOLE} { work_console (); }
-    if (x & WORK_NET) { work_net (); }
+    if (x & WORK_CONSOLE) { work_console (); }
+    if (x & WORK_NET) { work_read_write (); }
     if (!(x & WORK_CONSOLE) && !working_handle_count) { return 0; }
   }
 }
 
 char *makepath (const char *path) {
   assert (path);
-  if (*path == '/') { return strdup (path); }
-  else { 
+  if (*path == '/') { 
+    return strdup (path); 
+  } else { 
     char *s; 
     const char *h = getenv ("HOME");
     assert (asprintf (&s, "%s/%s", h, path) >= 0);
@@ -488,7 +601,7 @@ int load_access_token (void) {
 int main (int argc, char **argv) {
   char c;
   int connections = 10;
-  while ((c = getopt (argc, argv, "vhl:o:a:RD:M:Pc:A:S:N:m:u:")) != -1) {
+  while ((c = getopt (argc, argv, "vhl:o:a:RD:M:Pc:A:S:N:m:u:O")) != -1) {
     switch (c) {
       case 'u':
         username = strdup (optarg);
@@ -549,6 +662,9 @@ int main (int argc, char **argv) {
         break;
       case 'P':
         persistent ++;
+        break;
+      case 'O':
+        one_shot ++;
         break;
       case 'm':
         connections = atoi (optarg);
@@ -635,6 +751,11 @@ int main (int argc, char **argv) {
   
   assert (argc >= 0);
 
+  int i;
+  for (i = 0; i < argc; i++) {
+    add_token (strdup (argv[i]), 0, 0);
+  }
+
   if (!disable_net) {
     if (connections <= 1) { connections = 2; }
     if (connections >= 1000) { connections = 1000; }
@@ -662,6 +783,17 @@ int main (int argc, char **argv) {
     }
     if (loop () < 0) {
       fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
+      return current_error_code;
+    } else {
+      return 0;
+    }
+  }
+  if (one_shot) {
+    if (loop2 () < 0) {
+      fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
+      return current_error_code;
+    } else {
+      return 0;
     }
   }
   if (!argc) {

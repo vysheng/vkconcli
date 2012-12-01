@@ -35,7 +35,23 @@ void print_spaces (int level) {
 extern int disable_sql;
 extern CURL *curl_handle;
 
-
+void print_message_text (int level, const char *text) {
+  while (*text) {
+    if (!strncmp (text, "<br>", 4)) {
+      printf ("\n");
+      print_spaces (level);
+      text += 4;
+    } else if (!strncmp (text, "&lt;", 4)) {
+      printf ("<");
+      text += 4;
+    } else if (!strncmp (text, "&gt;", 4)) {
+      printf (">");
+      text += 4;
+    } else {
+      printf ("%c", *(text ++));
+    }
+  }
+}
 
 void print_message (int level, const struct message *msg) {
   print_spaces (level);
@@ -51,9 +67,10 @@ void print_message (int level, const struct message *msg) {
   } else {
     printf ("Message #%d %s user %d (%s %s)\n", msg->id, msg->out ? "to" : "from", msg->uid, user->first_name, user->last_name);
   }
-  struct tm *lctime = localtime ((void *)&(msg->date));
+  long _t = msg->date;
+  struct tm *lctime = localtime ((void *)&_t);
   print_spaces (level + 1);
-  printf ("Created at [%d-%d-%d %d:%d:%d], state %s\n", 
+  printf ("Created at [%04d-%02d-%02d %02d:%02d:%02d], state %s\n", 
     lctime->tm_year + 1900, lctime->tm_mon + 1, lctime->tm_mday, 
     lctime->tm_hour, lctime->tm_min, lctime->tm_sec,
     msg->read_state ? "read" : "unread");
@@ -66,8 +83,10 @@ void print_message (int level, const struct message *msg) {
   print_spaces (level + 1);
   printf ("Title %s\n", msg->title ? msg->title : "<none>");
   print_spaces (level + 1);
-  printf ("Body %s\n", msg->body ? msg->body : "<none>");
-
+  printf ("Body\n");
+  print_spaces (level + 1);
+  print_message_text (level + 1, msg->body ? msg->body : "<none>");
+  printf ("\n");
 }
 
 void print_message_array (int num, struct message **msg, int reverse) {
