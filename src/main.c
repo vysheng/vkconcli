@@ -427,7 +427,7 @@ int work_console_msg_to (int id) {
     printf ("Not sent.\n");
     return _ERROR;
   }
-  printf ("Msg to %d successfully sent:\n---\n%s\n---\n", id, s);
+  //printf ("Msg to %d successfully sent:\n---\n%s\n---\n", id, s);
   free (s);
   return TOKEN_OK;
 }
