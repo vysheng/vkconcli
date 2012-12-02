@@ -24,6 +24,11 @@ struct message *vk_parse_message_longpoll (json_t *J) {
   r->chat_id = (flags & 16) ? -1 : 0;
   r->deleted = (flags & 128) != 0;
   r->emoji = 0;
+  json_t *t = json_array_get (J, 7);
+  if (t && json_object_get (t, "from") && (flags & 16)) {
+    r->chat_id = r->uid - 2000000000;
+    r->uid = atoi (json_string_value (json_object_get (t, "from")));
+  }
   return r;
 }
 
