@@ -13,12 +13,20 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#else
+#endif
 
 #include <curl/curl.h>
 #include <jansson.h>
 
 #include <sqlite3.h>
+
+#ifdef HAVE_LIBSDL
 #include <SDL/SDL.h>
+#endif
+
 #include <libconfig.h>
 
 #include "structures.h"
@@ -729,7 +737,7 @@ int main (int argc, char **argv) {
   if (!password) {
     conf_setting = config_lookup (&conf, "password");
     if (conf_setting) {
-      username = strdup (config_setting_get_string (conf_setting));
+      password = strdup (config_setting_get_string (conf_setting));
     }
   }
 
@@ -746,6 +754,7 @@ int main (int argc, char **argv) {
   if (db_file_name) {
     db_file_name = makepath (db_file_name);
   }
+
   argc -= optind;
   argv += optind;
   
@@ -770,12 +779,14 @@ int main (int argc, char **argv) {
       return current_error_code;
     }
   }
+#ifdef HAVE_LIBSDL
   if (!disable_audio) {
     if (SDL_Init (SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
       fprintf (stderr, "Sdl init error %s\n", SDL_GetError ());
       return ERROR_SDL;
     }
   }
+#endif
   if (persistent) {
     if (disable_net || disable_sql) {
       fprintf (stderr, "In persistent mode sql and net should be on\n");

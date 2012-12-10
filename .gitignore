@@ -2,3 +2,4 @@ bin/*
 obj/*
 get.sh
 put.sh
+debug.sh

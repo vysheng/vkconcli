@@ -11,6 +11,30 @@ sqlite3 *db_handle;
 char db_query_buf[DB_QUERY_BUF_SIZE];
 extern int verbosity;
 
+int set_string_callback (void *data, int size, char **results, char **fields UNUSED) {
+  assert (!*(char **)data);
+  assert (size == 1);
+  *(char **)data = strdup (*results);
+  return 0;
+}
+
+int vk_get_max_mid (void) {
+  char *q = sqlite3_mprintf ("SELECT MAX(id) FROM messages WHERE 1;");
+  char *e = 0;
+  char *r = 0;
+
+  if (sqlite3_exec (db_handle, q, set_string_callback, &r, &e) != SQLITE_OK || e) {
+    vk_error (ERROR_SQLITE, "SQLite error %s\n", e);
+    return _ERROR;
+  }
+
+  sqlite3_free (q);
+  
+  int x = r ? atoi (r) : 0;
+  free (r);
+  return x;
+}
+
 int vk_alias_add (const char *id, const char *result) {
   char *q = sqlite3_mprintf ("INSERT INTO aliases (id, result) VALUES (%Q, %Q);", id, result);
   if (verbosity >= 4) {
@@ -25,13 +49,6 @@ int vk_alias_add (const char *id, const char *result) {
 
   sqlite3_free (q);
   
-  return 0;
-}
-
-int set_string_callback (void *data, int size, char **results, char **fields UNUSED) {
-  assert (!*(char **)data);
-  assert (size == 1);
-  *(char **)data = strdup (*results);
   return 0;
 }
 

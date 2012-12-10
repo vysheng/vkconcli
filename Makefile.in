@@ -1,0 +1,57 @@
+srcdir=@srcdir@
+
+CFLAGS=@CFLAGS@
+LDFLAGS=@LDFLAGS@
+CPPFLAGS=@CPPFLAGS@
+DEFS=@DEFS@
+COMPILE_FLAGS=${CFLAGS} ${CPPFLAGS} ${DEFS}
+
+LOCAL_LDFLAGS=-lcurl -lm -ljansson -lsqlite3 -lSDL -lconfig
+LINK_FLAGS=${LDFLAGS} ${LOCAL_LDFLAGS}
+
+HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/global-vars.h
+AUTOGEN_SRC= ${srcdir}/src/conf/messages.conf ${srcdir}/src/conf/users.conf
+INCLUDE=-I. -I${srcdir}/src/ -I${srcdir}
+CC=@CC@
+OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o global-vars.o
+
+.SUFFIXES:
+.SUFFIXES: .c .h .o .py
+
+all: vkconcli
+
+
+vkconcli: ${OBJECTS}
+	${CC} ${LINK_FLAGS} ${OBJECTS} -o $@
+
+main.o: ${srcdir}/src/main.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+net.o: ${srcdir}/src/net.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+tree.o: ${srcdir}/src/tree.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+md5.o: ${srcdir}/src/md5.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+structures.o: ${srcdir}/src/structures.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+structures-auto.o: structures-auto.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+global-vars.o: ${srcdir}/src/global-vars.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+structures-auto.h: ${srcdir}/src/gen.py ${AUTOGEN_SRC}
+	${srcdir}/src/gen.py h $@ ${AUTOGEN_SRC}
+
+structures-auto.c: ${srcdir}/src/gen.py ${AUTOGEN_SRC}
+	${srcdir}/src/gen.py c $@ ${AUTOGEN_SRC}
+
+
+
+clean:
+	rm -rf *.log Makefile config.h vkconcli *.o structures-auto.c structures-auto.h autom* config.status configure config.log 2> /dev/null || echo "all clean" 

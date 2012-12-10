@@ -13,6 +13,7 @@
 #include "structures-auto.h"
 #include "structures.h"
 #include "global-vars.h"
+#include "tree.h"
 
 #define CLIENT_ID 2870218
 #define CLIENT_ID_STR #CLIENT_ID
@@ -527,6 +528,47 @@ int aio_msgs_get (int offset, int limit, int reverse, int out) {
   struct vk_curl_handle *handle = get_handle ();
   if (!handle) { return _ERROR; }
   return do_query (handle, query, &methods, reverse ? 1 : 0, 0);
+}
+/* }}} */
+
+/* {{{ Force update messages methods */
+
+int aio_force_update (void);
+int vk_force_update_finalize (struct vk_curl_handle *handle, void *data) {
+  struct message **messages = data;
+  int n = (long)*messages;
+  print_message_array (n, messages + 1, (handle->flags & (1ll << 32)) != 0);
+  if (n == 100) { 
+    aio_force_update ();
+  }
+  return 0;
+}
+
+int aio_force_update (void) {
+  if (!access_token) {
+    vk_error (ERROR_NO_ACCESS_TOKEN, "No access token");
+    return _ERROR;
+  }
+
+  int limit = 100;
+  int offset = vk_get_max_mid () + 1;
+
+  static char query[10001];
+  int l = sprintf (query, "https://api.vk.com/method/messages.getById?mids=");
+  int i;
+  for (i = 0; i < limit; i++) {
+    l += sprintf (query + l, "%s%d", i ? "," : "", offset + i);
+  }
+  sprintf (query, "access_token=%s", access_token);
+  
+  struct vk_methods methods = {
+    .parse = default_parse,
+    .on_end = vk_msgs_get_aio,
+    .finalize = vk_force_update_finalize
+  };
+  struct vk_curl_handle *handle = get_handle ();
+  if (!handle) { return _ERROR; }
+  return do_query (handle, query, &methods, 0, 0);
 }
 /* }}} */
 
