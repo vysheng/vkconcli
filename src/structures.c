@@ -78,7 +78,7 @@ void print_message (int level, const struct message *msg) {
   printf ("Created at [%04d-%02d-%02d %02d:%02d:%02d], state %s\n", 
     lctime->tm_year + 1900, lctime->tm_mon + 1, lctime->tm_mday, 
     lctime->tm_hour, lctime->tm_min, lctime->tm_sec,
-    msg->read_state ? "read" : "unread");
+    msg->deleted ? "deleted" : msg->read_state ? "read" : "unread");
   print_spaces (level + 1);
   if (msg->chat_id <= 0) {
     printf ("No chat\n");

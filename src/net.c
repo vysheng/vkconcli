@@ -468,29 +468,36 @@ void *vk_msgs_get_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) {
   }
   int l = json_array_size (ans);
   struct message **messages = malloc (sizeof (void *) * l);
-  messages[0] = (void *)(long )(l - 1);
   int i;
+  int cc = 1;
   for (i = 1; i < l; i++) {
-    messages[i] = vk_parse_message (json_array_get (ans, i));
-    if (!messages[i]) {
+    messages[cc] = vk_parse_message (json_array_get (ans, i));
+    if (!messages[cc]) {
       int j;
-      for (j = 1; j < i; j++) {
+      for (j = 1; j < cc; j++) {
         free (messages[j]);
       }
       free (messages);
       return 0;
     }
-    if (!disable_sql) {
-      if (vk_db_insert_message (messages[i]) < 0) {
-        int j;
-        for (j = 1; j <= i; j++) {
-          free (messages[j]);
+    if (!messages[cc]->uid) {
+      free (messages[cc]);
+    } else {
+ 
+      if (!disable_sql) {
+        if (vk_db_insert_message (messages[cc]) < 0) {
+          int j;
+          for (j = 1; j <= cc; j++) {
+            free (messages[j]);
+          }
+          free (messages);
+          return 0;
         }
-        free (messages);
-        return 0;
       }
+      cc ++;
     }
   }
+  messages[0] = (void *)(long )(cc - 1);
   return messages;
 }
 
@@ -559,7 +566,7 @@ int aio_force_update (void) {
   for (i = 0; i < limit; i++) {
     l += sprintf (query + l, "%s%d", i ? "," : "", offset + i);
   }
-  sprintf (query, "access_token=%s", access_token);
+  l += sprintf (query + l, "&access_token=%s", access_token);
   
   struct vk_methods methods = {
     .parse = default_parse,

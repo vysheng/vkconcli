@@ -9,9 +9,6 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
-/* Define to 1 if you have the `config' library (-lconfig). */
-#undef HAVE_LIBCONFIG
-
 /* Define to 1 if you have the `curl' library (-lcurl). */
 #undef HAVE_LIBCURL
 
@@ -106,3 +103,7 @@
 
 /* Define to `unsigned int' if <sys/types.h> does not define. */
 #undef size_t
+
+#undef ENABLE_LIBCONFIG
+#undef ENABLE_AUDIO
+

@@ -21,4 +21,6 @@ extern int max_depth;
 
 extern int working_handle_count;
 extern int handle_count;
+
+extern int connections;
 #endif

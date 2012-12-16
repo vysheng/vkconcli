@@ -16,6 +16,7 @@
 #define ERROR_SDL 13
 #define ERROR_CONFIG 14
 #define ERROR_IN 15
+#define ERROR_NOT_COMPILED 16
 
 #define _FATAL_ERROR -9
 #define _ERROR -1

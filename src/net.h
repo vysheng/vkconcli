@@ -10,6 +10,7 @@ int aio_profiles_get (int num, const int *ids, int silent);
 int aio_msg_send (int id, const char *msg);
 int aio_wall_post (int id, const char *msg);
 int aio_auth (const char *username, const char *password);
+int aio_force_update (void);
 int work_read_write (void);
 int aio_longpoll (void);
 #endif

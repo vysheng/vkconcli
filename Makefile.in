@@ -6,7 +6,8 @@ CPPFLAGS=@CPPFLAGS@
 DEFS=@DEFS@
 COMPILE_FLAGS=${CFLAGS} ${CPPFLAGS} ${DEFS}
 
-LOCAL_LDFLAGS=-lcurl -lm -ljansson -lsqlite3 -lSDL -lconfig
+EXTRA_LIBS=@EXTRA_LIBS@
+LOCAL_LDFLAGS=-lcurl -lm -ljansson -lsqlite3 ${EXTRA_LIBS}
 LINK_FLAGS=${LDFLAGS} ${LOCAL_LDFLAGS}
 
 HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/global-vars.h

@@ -16,6 +16,8 @@
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #else
+#  define ENABLE_LIBCONFIG 1
+#  define ENABLE_AUDIO 1
 #endif
 
 #include <curl/curl.h>
@@ -23,11 +25,13 @@
 
 #include <sqlite3.h>
 
-#ifdef HAVE_LIBSDL
-#include <SDL/SDL.h>
+#ifdef ENABLE_AUDIO
+#  include <SDL/SDL.h>
 #endif
 
-#include <libconfig.h>
+#ifdef ENABLE_LIBCONFIG
+#  include <libconfig.h>
+#endif
 
 #include "structures.h"
 #include "net.h"
@@ -52,8 +56,9 @@ char *current_error;
 int current_error_code;
 
 
-
+#ifdef ENABLE_LIBCONFIG
 config_t conf;
+#endif
 
 void vk_error (int error_code, const char *format, ...) {
   current_error_code = error_code;
@@ -427,16 +432,24 @@ int next_token (void) {
     if (t != TOKEN_OK) { return t;}\
   }
 
+int var_limit;
+
+void clear_vars (void) {
+  var_limit = 0;
+}
+
 int work_console_msg_to (int id) {
   NT;
   char *s = strndup (cur_token, cur_token_len);
   //vk_msg_send (id, s);
   if (aio_msg_send (id, s) < 0) {
     printf ("Not sent.\n");
+    clear_vars ();
     return _ERROR;
   }
   //printf ("Msg to %d successfully sent:\n---\n%s\n---\n", id, s);
   free (s);
+  clear_vars ();
   return TOKEN_OK;
 }
 
@@ -448,6 +461,7 @@ int work_console_msg (void) {
 }
 
 int work_console_history (void) {
+  int limit = var_limit ? var_limit : default_history_limit;
   return TOKEN_OK;
 }
 
@@ -460,10 +474,29 @@ int work_console_alias (void) {
   char *text = strndup (cur_token, cur_token_len);
   if (vk_alias_add (name, text) < 0) {
     free (text);
+    clear_vars ();
     return _ERROR;
   } else {
     free (text);
+    clear_vars ();
     return TOKEN_OK;
+  }
+}
+
+int work_console_force_update (void) {
+  if (aio_force_update () < 0) {
+    clear_vars ();
+    return _ERROR;
+  } else {
+    clear_vars ();
+    return TOKEN_OK;
+  }
+}
+
+int work_set_limit (int s) {
+  var_limit = atoi (cur_token + s);
+  if (var_limit <= 0 || var_limit >= 1000) {
+    var_limit = 0;
   }
 }
 
@@ -475,6 +508,12 @@ int work_console_main (void) {
     return work_console_history ();
   } else if (cur_token_len == 5 && !strncmp ("alias", cur_token, 5)) {
     return work_console_alias ();
+  } else if (cur_token_len == 12 && !strncmp ("force_update", cur_token, 12)) {
+    return work_console_force_update ();
+  } else if (cur_token_len >= 2 && !strncmp ("l=", cur_token, 2)) {
+    return work_set_limit (2);
+  } else if (cur_token_len >= 6 && !strncmp ("limit=", cur_token, 6)) {
+    return work_set_limit (6);
   }
   return TOKEN_UNEXPECTED;
 }
@@ -574,25 +613,13 @@ char *makepath (const char *path) {
 
 int load_access_token (void) {
   if (access_token) { return 1;}
-  config_setting_t *conf_setting;
-  if (!access_token) {
-    conf_setting = config_lookup (&conf, "access_token");
-    if (conf_setting) {
-      access_token = strdup (config_setting_get_string (conf_setting));
-      assert (access_token);
-    }
-    conf_setting = config_lookup (&conf, "access_token_file");
-    if (conf_setting) {
-      access_token_file = makepath (config_setting_get_string (conf_setting));
-      if (!access_token) {
-        FILE *f = fopen (access_token_file, "rt");
-        if (f) {
-          if (fscanf (f, "%as", &access_token) < 1) {
-            access_token = 0;
-          }
-          fclose (f);
-        }
+  if (access_token_file) {
+    FILE *f = fopen (access_token_file, "rt");
+    if (f) {
+      if (fscanf (f, "%as", &access_token) < 1) {
+        access_token = 0;
       }
+      fclose (f);
     }
   }
   if (!access_token) {
@@ -606,9 +633,77 @@ int load_access_token (void) {
   return 1;
 }
 
+#ifdef ENABLE_LIBCONFIG
+
+#define ANY_CONF_VAR(var,conf_path,default_val,not_set,suffix) \
+  if (var == not_set) { \
+    conf_setting = config_lookup (&conf, conf_path); \
+    if (!conf_setting) {  \
+      var = default_val; \
+    } else { \
+      var = config_setting_get_ ## suffix (conf_setting); \
+    } \
+  } 
+
+
+#define STR_CONF_VAR(var,conf_path,default_val) \
+  if (var == 0) { \
+    conf_setting = config_lookup (&conf, conf_path); \
+    if (!conf_setting) {  \
+      var = default_val ? strdup (default_val) : 0; \
+    } else { \
+      var = strdup (config_setting_get_string (conf_setting)); \
+    } \
+  } 
+
+#else
+#define ANY_CONF_VAR(var,conf_path,default_val,not_set,suffix) \
+  if (var == not_set) { \
+    var = default_val; \
+  } 
+
+
+#define STR_CONF_VAR(var,conf_path,default_val) \
+  if (var == 0) { \
+    var = default_val ? strdup (default_val) : 0; \
+  } 
+
+#endif
+
+#define BOOL_CONF_VAR(a,b,c) ANY_CONF_VAR (a, b, c, -1, bool)
+#define INT_CONF_VAR(a,b,c) ANY_CONF_VAR (a, b, c, -1, int)
+void set_var_values (void) {
+#ifdef ENABLE_LIBCONFIG
+  config_setting_t *conf_setting;
+  config_init (&conf);
+
+  if (config_read_file (&conf, config_file_name) != CONFIG_TRUE) {
+    fprintf (stderr, "error parsing config `%s`: %s\n", config_file_name, config_error_text (&conf));
+    exit (ERROR_CONFIG);
+  }
+#endif
+  BOOL_CONF_VAR (disable_net, "disable_net", 0);
+  BOOL_CONF_VAR (disable_sql, "disable_sql", 0);
+  BOOL_CONF_VAR (disable_audio, "disable_audio", 0);
+  INT_CONF_VAR (default_history_limit, "default_history_limit", 100);
+  STR_CONF_VAR (username, "username", 0);
+  STR_CONF_VAR (password, "password", 0);
+  STR_CONF_VAR (access_token, "access_token", 0);
+  STR_CONF_VAR (access_token_file, "access_token_file", 0);
+  if (access_token_file) {
+    access_token_file = makepath (access_token_file); 
+  }
+  STR_CONF_VAR (db_file_name, "db_file_name", ".vkconcli/db");
+  if (db_file_name) {
+    db_file_name = makepath (db_file_name);
+  }
+  INT_CONF_VAR (connections, "connections", 10);
+  if (connections <= 1) { connections = 2; }
+  if (connections >= 1000) { connections = 1000; }
+}
+
 int main (int argc, char **argv) {
   char c;
-  int connections = 10;
   while ((c = getopt (argc, argv, "vhl:o:a:RD:M:Pc:A:S:N:m:u:O")) != -1) {
     switch (c) {
       case 'u':
@@ -678,7 +773,12 @@ int main (int argc, char **argv) {
         connections = atoi (optarg);
         break;
       case 'c':
-        config_file_name = optarg;
+        #ifdef ENABLE_LIBCONFIG
+          config_file_name = optarg;
+        #else
+          fprintf (stderr, "config is not enabled\n");
+          exit (ERROR_NOT_COMPILED);
+        #endif
         break;
       case 'h':
       default:
@@ -687,72 +787,10 @@ int main (int argc, char **argv) {
   }
 
   config_file_name = makepath (config_file_name);
-  config_init (&conf);
-
-  if (config_read_file (&conf, config_file_name) != CONFIG_TRUE) {
-    fprintf (stderr, "error parsing config: %s\n", config_error_text (&conf));
-    return ERROR_CONFIG;
-  }
-
-  config_setting_t *conf_setting;
-  if (disable_net == -1) {
-    conf_setting = config_lookup (&conf, "disable_net");
-    if (!conf_setting) {
-      disable_net = 0;
-    } else {
-      disable_net = config_setting_get_bool (conf_setting);
-    }
-  }
-
-  if (disable_sql == -1) {
-    conf_setting = config_lookup (&conf, "disable_sql");
-    if (!conf_setting) {
-      disable_sql = 0;
-    } else {
-      disable_sql = config_setting_get_bool (conf_setting);
-    }
-  }
-
-  if (disable_audio == -1) {
-    conf_setting = config_lookup (&conf, "disable_audio");
-    if (!conf_setting) {
-      disable_audio = 0;
-    } else {
-      disable_audio = config_setting_get_bool (conf_setting);
-    }
-  }
-
-  conf_setting = config_lookup (&conf, "default_history_limit");
-  if (conf_setting) {
-    default_history_limit = config_setting_get_int (conf_setting);
-  }
-
-  if (!username) {
-    conf_setting = config_lookup (&conf, "username");
-    if (conf_setting) {
-      username = strdup (config_setting_get_string (conf_setting));
-    }
-  }
-
-  if (!password) {
-    conf_setting = config_lookup (&conf, "password");
-    if (conf_setting) {
-      password = strdup (config_setting_get_string (conf_setting));
-    }
-  }
+  set_var_values ();
 
   if (!disable_net) {
     load_access_token ();
-  }
-  
-  if (!disable_sql && !db_file_name) {
-    conf_setting = config_lookup (&conf, "db_file");
-    if (conf_setting) {
-      db_file_name = strdup (config_setting_get_string (conf_setting));
-    }
-  }
-  if (db_file_name) {
-    db_file_name = makepath (db_file_name);
   }
 
   argc -= optind;
@@ -766,8 +804,6 @@ int main (int argc, char **argv) {
   }
 
   if (!disable_net) {
-    if (connections <= 1) { connections = 2; }
-    if (connections >= 1000) { connections = 1000; }
     if (vk_net_init (1, connections) < 0) {
       fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);
       return current_error_code;
@@ -779,7 +815,8 @@ int main (int argc, char **argv) {
       return current_error_code;
     }
   }
-#ifdef HAVE_LIBSDL
+
+#ifdef ENABLE_AUDIO
   if (!disable_audio) {
     if (SDL_Init (SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
       fprintf (stderr, "Sdl init error %s\n", SDL_GetError ());
@@ -787,6 +824,7 @@ int main (int argc, char **argv) {
     }
   }
 #endif
+
   if (persistent) {
     if (disable_net || disable_sql) {
       fprintf (stderr, "In persistent mode sql and net should be on\n");
