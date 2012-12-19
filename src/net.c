@@ -12,7 +12,7 @@
 #include "net.h"
 #include "structures-auto.h"
 #include "structures.h"
-#include "global-vars.h"
+#include "util_config.h"
 #include "tree.h"
 
 #define CLIENT_ID 2870218
@@ -545,7 +545,7 @@ int vk_force_update_finalize (struct vk_curl_handle *handle, void *data) {
   struct message **messages = data;
   int n = (long)*messages;
   print_message_array (n, messages + 1, (handle->flags & (1ll << 32)) != 0);
-  if (n == 100) { 
+  if (n != 0) { 
     aio_force_update ();
   }
   return 0;

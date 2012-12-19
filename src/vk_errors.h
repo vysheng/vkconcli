@@ -16,7 +16,7 @@
 #define ERROR_SDL 13
 #define ERROR_CONFIG 14
 #define ERROR_IN 15
-#define ERROR_NOT_COMPILED 16
+#define ERROR_FEATURE_DISABLED 16
 
 #define _FATAL_ERROR -9
 #define _ERROR -1
@@ -26,5 +26,6 @@
 
 #define UNUSED __attribute__ ((unused))
 void vk_error (int error_code, const char *format, ...) __attribute__ ((format(printf,2,3)));
+void vk_critical_error (int error_code, const char *format, ...) __attribute__ ((format(printf,2,3)));
 void vk_log (int level, const char *format, ...) __attribute__ ((format(printf,2,3)));
 #endif

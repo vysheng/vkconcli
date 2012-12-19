@@ -29,15 +29,12 @@
 #  include <SDL/SDL.h>
 #endif
 
-#ifdef ENABLE_LIBCONFIG
-#  include <libconfig.h>
-#endif
 
 #include "structures.h"
 #include "net.h"
 #include "vk_errors.h"
 #include "tree.h"
-#include "global-vars.h"
+#include "util_config.h"
 
 #define MAX_MESSAGE_LEN 1000
 #define MAX_DEPTH 10
@@ -56,9 +53,6 @@ char *current_error;
 int current_error_code;
 
 
-#ifdef ENABLE_LIBCONFIG
-config_t conf;
-#endif
 
 void vk_error (int error_code, const char *format, ...) {
   current_error_code = error_code;
@@ -72,6 +66,17 @@ void vk_error (int error_code, const char *format, ...) {
     fprintf (stderr, "%s\n", current_error);
   }
 }
+
+void vk_critical_error (int error_code, const char *format, ...) {
+  current_error_code = error_code;
+  va_list l;
+  va_start (l, format);
+  static char buf[10000];
+  vsnprintf (buf, 9999, format, l);
+  fprintf (stderr, "%s\n", current_error);
+  exit (error_code);
+}
+
 
 void vk_log (int level, const char *format, ...) {
   if (level <= verbosity) {
@@ -461,7 +466,7 @@ int work_console_msg (void) {
 }
 
 int work_console_history (void) {
-  int limit = var_limit ? var_limit : default_history_limit;
+  limit = var_limit ? var_limit : default_history_limit;
   return TOKEN_OK;
 }
 
@@ -498,6 +503,7 @@ int work_set_limit (int s) {
   if (var_limit <= 0 || var_limit >= 1000) {
     var_limit = 0;
   }
+  return 0;
 }
 
 int work_console_main (void) {
@@ -599,18 +605,6 @@ int loop2 (void) {
   }
 }
 
-char *makepath (const char *path) {
-  assert (path);
-  if (*path == '/') { 
-    return strdup (path); 
-  } else { 
-    char *s; 
-    const char *h = getenv ("HOME");
-    assert (asprintf (&s, "%s/%s", h, path) >= 0);
-    return s;
-  }
-}
-
 int load_access_token (void) {
   if (access_token) { return 1;}
   if (access_token_file) {
@@ -633,74 +627,6 @@ int load_access_token (void) {
   return 1;
 }
 
-#ifdef ENABLE_LIBCONFIG
-
-#define ANY_CONF_VAR(var,conf_path,default_val,not_set,suffix) \
-  if (var == not_set) { \
-    conf_setting = config_lookup (&conf, conf_path); \
-    if (!conf_setting) {  \
-      var = default_val; \
-    } else { \
-      var = config_setting_get_ ## suffix (conf_setting); \
-    } \
-  } 
-
-
-#define STR_CONF_VAR(var,conf_path,default_val) \
-  if (var == 0) { \
-    conf_setting = config_lookup (&conf, conf_path); \
-    if (!conf_setting) {  \
-      var = default_val ? strdup (default_val) : 0; \
-    } else { \
-      var = strdup (config_setting_get_string (conf_setting)); \
-    } \
-  } 
-
-#else
-#define ANY_CONF_VAR(var,conf_path,default_val,not_set,suffix) \
-  if (var == not_set) { \
-    var = default_val; \
-  } 
-
-
-#define STR_CONF_VAR(var,conf_path,default_val) \
-  if (var == 0) { \
-    var = default_val ? strdup (default_val) : 0; \
-  } 
-
-#endif
-
-#define BOOL_CONF_VAR(a,b,c) ANY_CONF_VAR (a, b, c, -1, bool)
-#define INT_CONF_VAR(a,b,c) ANY_CONF_VAR (a, b, c, -1, int)
-void set_var_values (void) {
-#ifdef ENABLE_LIBCONFIG
-  config_setting_t *conf_setting;
-  config_init (&conf);
-
-  if (config_read_file (&conf, config_file_name) != CONFIG_TRUE) {
-    fprintf (stderr, "error parsing config `%s`: %s\n", config_file_name, config_error_text (&conf));
-    exit (ERROR_CONFIG);
-  }
-#endif
-  BOOL_CONF_VAR (disable_net, "disable_net", 0);
-  BOOL_CONF_VAR (disable_sql, "disable_sql", 0);
-  BOOL_CONF_VAR (disable_audio, "disable_audio", 0);
-  INT_CONF_VAR (default_history_limit, "default_history_limit", 100);
-  STR_CONF_VAR (username, "username", 0);
-  STR_CONF_VAR (password, "password", 0);
-  STR_CONF_VAR (access_token, "access_token", 0);
-  STR_CONF_VAR (access_token_file, "access_token_file", 0);
-  if (access_token_file) {
-    access_token_file = makepath (access_token_file); 
-  }
-  STR_CONF_VAR (db_file_name, "db_file_name", ".vkconcli/db");
-  if (db_file_name) {
-    db_file_name = makepath (db_file_name);
-  }
-  INT_CONF_VAR (connections, "connections", 10);
-  if (connections <= 1) { connections = 2; }
-  if (connections >= 1000) { connections = 1000; }
-}
 
 int main (int argc, char **argv) {
   char c;
@@ -776,8 +702,7 @@ int main (int argc, char **argv) {
         #ifdef ENABLE_LIBCONFIG
           config_file_name = optarg;
         #else
-          fprintf (stderr, "config is not enabled\n");
-          exit (ERROR_NOT_COMPILED);
+          vk_critical_error (ERROR_FEATURE_DISABLED, "config is disabled");
         #endif
         break;
       case 'h':
@@ -786,9 +711,9 @@ int main (int argc, char **argv) {
     }
   }
 
-  config_file_name = makepath (config_file_name);
-  set_var_values ();
 
+  read_config ();
+  
   if (!disable_net) {
     load_access_token ();
   }
@@ -809,6 +734,7 @@ int main (int argc, char **argv) {
       return current_error_code;
     }
   }
+
   if (!disable_sql) {
     if (vk_db_init (db_file_name) < 0) {
       fprintf (stderr, "Error #%d: %s\n", current_error_code, current_error);

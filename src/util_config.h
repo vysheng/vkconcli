@@ -1,5 +1,8 @@
-#ifndef __GLOBAL_VARS_H__
-#define __GLOBAL_VARS_H__
+#ifndef __UTIL_CONFIG_H__
+#define __UTIL_CONFIG_H__
+
+#define DEFAULT_CONFIG_FILE_NAME ".vkconcli/config"
+#define DEFAULT_DB_FILE_NAME ".vkconcli/db"
 
 extern int verbosity;
 
@@ -23,4 +26,6 @@ extern int working_handle_count;
 extern int handle_count;
 
 extern int connections;
+
+void read_config (void);
 #endif

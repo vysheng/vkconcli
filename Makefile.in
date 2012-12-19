@@ -10,11 +10,11 @@ EXTRA_LIBS=@EXTRA_LIBS@
 LOCAL_LDFLAGS=-lcurl -lm -ljansson -lsqlite3 ${EXTRA_LIBS}
 LINK_FLAGS=${LDFLAGS} ${LOCAL_LDFLAGS}
 
-HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/global-vars.h
+HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/util_config.h
 AUTOGEN_SRC= ${srcdir}/src/conf/messages.conf ${srcdir}/src/conf/users.conf
 INCLUDE=-I. -I${srcdir}/src/ -I${srcdir}
 CC=@CC@
-OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o global-vars.o
+OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o util_config.o
 
 .SUFFIXES:
 .SUFFIXES: .c .h .o .py
@@ -43,7 +43,7 @@ structures.o: ${srcdir}/src/structures.c ${HEADERS}
 structures-auto.o: structures-auto.c ${HEADERS}
 	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
 
-global-vars.o: ${srcdir}/src/global-vars.c ${HEADERS}
+util_config.o: ${srcdir}/src/util_config.c ${HEADERS}
 	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
 
 structures-auto.h: ${srcdir}/src/gen.py ${AUTOGEN_SRC}
