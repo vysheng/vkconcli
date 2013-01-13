@@ -17,6 +17,7 @@
 #define ERROR_CONFIG 14
 #define ERROR_IN 15
 #define ERROR_FEATURE_DISABLED 16
+#define ERROR_INPUT 17
 
 #define _FATAL_ERROR -9
 #define _ERROR -1
