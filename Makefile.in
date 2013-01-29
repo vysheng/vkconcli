@@ -4,17 +4,17 @@ CFLAGS=@CFLAGS@
 LDFLAGS=@LDFLAGS@
 CPPFLAGS=@CPPFLAGS@
 DEFS=@DEFS@
-COMPILE_FLAGS=${CFLAGS} ${CPPFLAGS} ${DEFS}
+COMPILE_FLAGS=${CFLAGS} ${CPPFLAGS} ${DEFS} -Wall -Wextra -Werror
 
 EXTRA_LIBS=@EXTRA_LIBS@
 LOCAL_LDFLAGS=-lcurl -lm -ljansson -lsqlite3 ${EXTRA_LIBS}
 LINK_FLAGS=${LDFLAGS} ${LOCAL_LDFLAGS}
 
-HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/util_config.h
+HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/util_config.h ${srcdir}/src/util_tokenizer.h ${srcdir}/src/util_parser.h
 AUTOGEN_SRC= ${srcdir}/src/conf/messages.conf ${srcdir}/src/conf/users.conf
 INCLUDE=-I. -I${srcdir}/src/ -I${srcdir}
 CC=@CC@
-OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o util_config.o
+OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o util_config.o util_io.o util_tokenizer.o util_parser.o
 
 .SUFFIXES:
 .SUFFIXES: .c .h .o .py
@@ -44,6 +44,15 @@ structures-auto.o: structures-auto.c ${HEADERS}
 	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
 
 util_config.o: ${srcdir}/src/util_config.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+util_io.o: ${srcdir}/src/util_io.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+util_tokenizer.o: ${srcdir}/src/util_tokenizer.c ${HEADERS}
+	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
+
+util_parser.o: ${srcdir}/src/util_parser.c ${HEADERS}
 	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
 
 structures-auto.h: ${srcdir}/src/gen.py ${AUTOGEN_SRC}

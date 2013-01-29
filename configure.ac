@@ -46,6 +46,21 @@ AC_ARG_ENABLE(audio,[--enable-audio/--disable-audio],
     [ EXTRA_LIBS+=" -lSDL" ; ]
   ])
     
+AC_ARG_ENABLE(readline,[--enable-readline/--disable-readline],
+  [ 
+  if test "x$enableval" = "xno" ; then
+    AC_MSG_RESULT([disabled])
+  else
+    AC_MSG_RESULT([readline enabled])
+    AC_CHECK_LIB([readline],[readline],AC_DEFINE([ENABLE_READLINE]),AC_MSG_ERROR([No libreadline found. Try --disable-readline]))
+    [ EXTRA_LIBS+=" -lreadline" ;]
+  fi 
+  ],[
+    AC_MSG_RESULT([readline enabled])
+    AC_CHECK_LIB([readline],[readline],AC_DEFINE([ENABLE_READLINE]),AC_MSG_ERROR([No libreadline found. Try --disable-readline]))
+    [ EXTRA_LIBS+=" -lreadline" ;]
+  ])
+    
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h malloc.h stdlib.h string.h sys/socket.h unistd.h])
 

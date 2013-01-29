@@ -13,6 +13,9 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#include <signal.h>
+#include <execinfo.h>
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #else
@@ -29,15 +32,22 @@
 #  include <SDL/SDL.h>
 #endif
 
+#ifdef ENABLE_READLINE
+#  include <termios.h>
+#  include <unistd.h>
+#  include <readline/readline.h>
+#  include <readline/history.h>
+#endif
 
 #include "structures.h"
 #include "net.h"
 #include "vk_errors.h"
 #include "tree.h"
 #include "util_config.h"
+#include "util_io.h"
+#include "util_tokenizer.h"
 
 #define MAX_MESSAGE_LEN 1000
-#define MAX_DEPTH 10
 
 
 int persistent;
@@ -53,7 +63,6 @@ char *current_error;
 int current_error_code;
 
 
-
 void vk_error (int error_code, const char *format, ...) {
   current_error_code = error_code;
   va_list l;
@@ -63,7 +72,8 @@ void vk_error (int error_code, const char *format, ...) {
   if (current_error) { free (current_error); }
   current_error = strdup (buf);
   if (verbosity >= 1) {
-    fprintf (stderr, "%s\n", current_error);
+    output_string (current_error);
+    //fprintf (stderr, "%s\n", current_error);
   }
 }
 
@@ -82,7 +92,9 @@ void vk_log (int level, const char *format, ...) {
   if (level <= verbosity) {
     va_list l;
     va_start (l, format);
-    vfprintf (stderr, format, l);
+    static char buf[10000];
+    vsnprintf (buf, 9999, format, l);
+    output_string (buf);
   }
 }
 
@@ -292,258 +304,9 @@ void usage (void) {
   exit (ERROR_COMMAND_LINE);
 }
 
-#define STD_BUF_SIZE (1 << 20)
-static char std_buf[STD_BUF_SIZE + 1];
-int std_buf_pos;
-int cur_pos;
-char *cur_token;
-int cur_token_len;
-int cur_token_flags;
-int preargc;
-char **preargv;
-#define TOKEN_NEED_MORE_BYTES -1
-#define TOKEN_ERROR -2
-#define TOKEN_OK 1 
-#define TOKEN_UNEXPECTED -3
-
 #define WORK_CONSOLE 1
 #define WORK_NET 2
 #define READ_CONSOLE 4
-
-#define cur_char std_buf[cur_pos]
-
-int is_whitespace (char c) {
-  return (c == 32 || c == 10 || c == 13 || c == 9 || c == 11 || c == 12);
-}
-
-int is_linebreak (char c) {
-  return (c == 10 || c == 13);
-}
-
-struct token {
-  char *str;
-  int len;
-  int flags;
-  struct token *next;
-};
-
-struct token *tokens;
-struct token *last_token;
-struct token *ctoken;
-
-int parse_all_tokens (char *name, int depth, int flags);
-// name should be duplicated
-void add_token (char *name, int flags, int depth) {
-  if (!(flags & 1) && depth == MAX_DEPTH) {
-    flags |= 3;
-  }
-  if (!(flags & 1)) {
-    char *res = vk_alias_get (name);
-    if (res) {
-      free (name);
-      parse_all_tokens (res, depth, 0);
-      free (res);
-      return;
-    }
-  }
-  struct token *token = malloc (sizeof (*token));
-  token->str = name;
-  token->len = strlen (name);
-  token->flags = flags;
-  token->next = 0;
-  if (last_token) {
-    last_token->next = token;
-    last_token = token;
-  } else {
-    assert (!tokens);
-    ctoken = tokens = last_token = token;
-  }
-}
-
-int parse_all_tokens (char *name, int depth, int flags) {
-  #define c name[pos]
-  int pos = 0;
-  while (c) {
-    while (is_whitespace (c)) { pos ++; }
-    if (!c) { return pos; }
-    const char *p = name + pos;
-    if (c != '"') {
-      while (!is_whitespace (c) && c) { pos ++; }
-      add_token (strndup (p, pos + name - p), 0, depth + 1);
-      if (!c) {
-        return pos;
-      }
-    } else {
-      if (name[pos + 1] == '"' && name[pos + 2] == '"') {
-        pos += 3;
-        p += 3;
-        while (c && memcmp ("\"\"\"", name + pos, 3)) { pos ++; }
-        if (!c && !(flags & 1)) {
-          fprintf (stderr, "incorrect token `%s`\n", p - 3); 
-        } else {
-          if (c) {
-            add_token (strndup (p, pos + name - p), 1, depth + 1);
-          } else {
-            return p - name - 3;
-          }
-        }
-      } else {
-        p ++;
-        pos ++;
-        while (!is_linebreak (c) && c != '"' && c) { pos ++; }
-        if (c == '"') {
-          add_token (strndup (p, pos + name - p), 1, depth + 1);
-        } else {
-          if (c || (!c && !(flags & 1))) {
-            fprintf (stderr, "incorrent token `%.*s`\n", (int)(pos + name - p + 1), p);
-          } else {
-            return p - name - 1;
-          }
-        }
-      }
-    }
-  }
-  return pos;
-  #undef c
-}
-
-void free_unused_tokens (void) {
-  while (tokens != ctoken) {
-    free (tokens->str);
-    struct token *t = tokens;
-    tokens = tokens->next;
-    free (t);
-  }
-  if (!tokens) {
-    last_token = 0;
-  }
-}
-
-int next_token (void) {
-  if (!ctoken) {
-    return TOKEN_NEED_MORE_BYTES;
-  }
-  cur_token = ctoken->str;
-  cur_token_len = ctoken->len;
-  cur_token_flags = ctoken->flags;
-  vk_log (2, "next_token = %s\n", cur_token);
-  ctoken = ctoken->next;
-  return TOKEN_OK;
-}
-
-#define NT \
-  { \
-    int t = next_token ();\
-    if (t != TOKEN_OK) { return t;}\
-  }
-
-int var_limit;
-
-void clear_vars (void) {
-  var_limit = 0;
-}
-
-int work_console_msg_to (int id) {
-  NT;
-  char *s = strndup (cur_token, cur_token_len);
-  //vk_msg_send (id, s);
-  if (aio_msg_send (id, s) < 0) {
-    printf ("Not sent.\n");
-    clear_vars ();
-    return _ERROR;
-  }
-  //printf ("Msg to %d successfully sent:\n---\n%s\n---\n", id, s);
-  free (s);
-  clear_vars ();
-  return TOKEN_OK;
-}
-
-int work_console_msg (void) {
-  NT;
-  int n = atoi (cur_token);
-  if (n <= 0 || n >= 1000000000) { return TOKEN_UNEXPECTED; }
-  return work_console_msg_to (n);
-}
-
-int work_console_history (void) {
-  limit = var_limit ? var_limit : default_history_limit;
-  return TOKEN_OK;
-}
-
-int work_console_alias (void) {
-  NT;
-  static char *name;
-  if (name) { free (name); }
-  name = strndup (cur_token, cur_token_len);
-  NT;
-  char *text = strndup (cur_token, cur_token_len);
-  if (vk_alias_add (name, text) < 0) {
-    free (text);
-    clear_vars ();
-    return _ERROR;
-  } else {
-    free (text);
-    clear_vars ();
-    return TOKEN_OK;
-  }
-}
-
-int work_console_force_update (void) {
-  if (aio_force_update () < 0) {
-    clear_vars ();
-    return _ERROR;
-  } else {
-    clear_vars ();
-    return TOKEN_OK;
-  }
-}
-
-int work_set_limit (int s) {
-  var_limit = atoi (cur_token + s);
-  if (var_limit <= 0 || var_limit >= 1000) {
-    var_limit = 0;
-  }
-  return 0;
-}
-
-int work_console_main (void) {
-  NT;
-  if (cur_token_len == 3 && !strncmp ("msg", cur_token, 3)) {
-    return work_console_msg ();
-  } else if (cur_token_len == 7 && !strncmp ("history", cur_token, 7)) {
-    return work_console_history ();
-  } else if (cur_token_len == 5 && !strncmp ("alias", cur_token, 5)) {
-    return work_console_alias ();
-  } else if (cur_token_len == 12 && !strncmp ("force_update", cur_token, 12)) {
-    return work_console_force_update ();
-  } else if (cur_token_len >= 2 && !strncmp ("l=", cur_token, 2)) {
-    return work_set_limit (2);
-  } else if (cur_token_len >= 6 && !strncmp ("limit=", cur_token, 6)) {
-    return work_set_limit (6);
-  }
-  return TOKEN_UNEXPECTED;
-}
-
-void work_console (void) {
-  int x = read (STDIN_FILENO, std_buf + std_buf_pos, STD_BUF_SIZE - std_buf_pos);
-  if (x <= 0) {
-    return;
-  }
-  std_buf_pos += x;
-  std_buf[std_buf_pos] = 0;
-  int l = parse_all_tokens (std_buf, -1, 1);
-  memcpy (std_buf, std_buf + l, std_buf_pos - l + 1);
-  std_buf_pos -= l;
-  while (1) {
-    int r = work_console_main ();
-    if (r != TOKEN_NEED_MORE_BYTES) {
-      free_unused_tokens ();
-    } else {
-      ctoken = tokens;
-      break;
-    }
-  }
-}
 
 extern CURLM *multi_handle;
 int poll_work (void) {
@@ -579,27 +342,37 @@ int poll_work (void) {
   r |= WORK_NET;
   return r;
 }
-
+/*
 void work_console_pre (void) {
+#ifndef ENABLE_READLINE
+  int x = read (STDIN_FILENO, std_buf + std_buf_pos, STD_BUF_SIZE - std_buf_pos);
+  if (x <= 0) {
+    return;
+  }
+  std_buf_pos += x;
+  std_buf[std_buf_pos] = 0;
+#else
+  return;
+#endif
   while (work_console_main () != TOKEN_NEED_MORE_BYTES);
-}
+}*/
 
 int loop (void) {
   aio_longpoll ();
-  work_console_pre ();
+  //work_console_pre ();
   while (1) {
     int x = poll_work ();
-    if (x & WORK_CONSOLE) { work_console (); }
+    if (x & WORK_CONSOLE) { work_io (); }
     if (x & WORK_NET) { work_read_write (); }
   }
   return 0;
 }
 
 int loop2 (void) {
-  work_console_pre ();
+  //work_console_pre ();
   while (1) {
     int x = poll_work ();
-    if (x & WORK_CONSOLE) { work_console (); }
+    if (x & WORK_CONSOLE) { work_io (); }
     if (x & WORK_NET) { work_read_write (); }
     if (!(x & WORK_CONSOLE) && !working_handle_count) { return 0; }
   }
@@ -627,8 +400,23 @@ int load_access_token (void) {
   return 1;
 }
 
+void print_backtrace (void) {
+  void *buffer[255];
+  const int calls = backtrace (buffer, sizeof (buffer) / sizeof (void *));
+  backtrace_symbols_fd (buffer, calls, 1);
+  restore_io ();
+  exit(EXIT_FAILURE);
+}
+
+void sig_handler (int signum) {
+  printf ("signal %d received\n", signum);
+  print_backtrace ();
+}
+
 
 int main (int argc, char **argv) {
+  signal (SIGSEGV, sig_handler);
+  signal (SIGABRT, sig_handler);  
   char c;
   while ((c = getopt (argc, argv, "vhl:o:a:RD:M:Pc:A:S:N:m:u:O")) != -1) {
     switch (c) {
@@ -713,7 +501,9 @@ int main (int argc, char **argv) {
 
 
   read_config ();
-  
+
+  init_io ();
+
   if (!disable_net) {
     load_access_token ();
   }

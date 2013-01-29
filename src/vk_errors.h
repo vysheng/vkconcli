@@ -26,6 +26,11 @@
 #define VK_TRY_ANS(a,f) a = f; if (a < 0) { return a; }
 
 #define UNUSED __attribute__ ((unused))
+
+#define COLOR_RED "\033[31;1m"
+#define COLOR_NORMAL "\033[0m"
+#define COLOR_GREEN "\033[32;1m"
+
 void vk_error (int error_code, const char *format, ...) __attribute__ ((format(printf,2,3)));
 void vk_critical_error (int error_code, const char *format, ...) __attribute__ ((format(printf,2,3)));
 void vk_log (int level, const char *format, ...) __attribute__ ((format(printf,2,3)));

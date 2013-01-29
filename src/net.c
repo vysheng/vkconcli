@@ -14,6 +14,7 @@
 #include "structures.h"
 #include "util_config.h"
 #include "tree.h"
+#include "util_io.h"
 
 #define CLIENT_ID 2870218
 #define CLIENT_ID_STR #CLIENT_ID
@@ -281,7 +282,7 @@ int vk_auth_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
       fprintf (f, "%s", (char *)data);
     }
   } else {
-    printf ("%s", (char *)data);
+    output_string ((char *)data);
   }
   access_token = strdup (data);
   return 0;
@@ -396,7 +397,7 @@ void *vk_wall_post_check_aio (struct vk_curl_handle *handle UNUSED, json_t *ans)
 
 int vk_wall_post_check_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   assert (data == (void *)(-1l));
-  printf ("Successfully sent\n");
+  output_string ("Successfully sent");
   return 0;
 }
 
@@ -434,7 +435,7 @@ void *vk_msg_check_send_aio (struct vk_curl_handle *handle UNUSED, json_t *ans) 
 
 int vk_msg_check_finalize (struct vk_curl_handle *handle UNUSED, void *data) {
   assert (data == (void *)(-1l));
-  printf ("Successfully sent\n");
+  vk_log (1, "Successfully sent");
   return 0;
 }
 
