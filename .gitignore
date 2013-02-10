@@ -3,3 +3,12 @@ obj/*
 get.sh
 put.sh
 debug.sh
+*.o
+vkconcli
+config.h
+config.status
+config.log
+Makefile
+autom4te*
+structures-auto.*
+configure
