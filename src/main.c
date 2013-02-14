@@ -500,16 +500,19 @@ int main (int argc, char **argv) {
   }
 
 
+  argc -= optind;
+  argv += optind;
+
   read_config ();
 
-  init_io ();
+  if (argc != 1 || strcmp (*argv, "auth")) {
+    init_io ();
+  }
+
 
   if (!disable_net) {
     load_access_token ();
   }
-
-  argc -= optind;
-  argv += optind;
   
   assert (argc >= 0);
 
