@@ -44,6 +44,7 @@ int handle_count;
 
 int connections = -1;
 
+int max_cached_items = -1;
 #ifdef ENABLE_LIBCONFIG
 
 #define ANY_CONF_VAR(var,conf_path,default_val,not_set,suffix) \
@@ -124,6 +125,7 @@ void read_config (void) {
   BOOL_CONF_VAR (disable_sql, "disable_sql", 0);
   BOOL_CONF_VAR (disable_audio, "disable_audio", 0);
   INT_CONF_VAR (default_history_limit, "default_history_limit", 100);
+  INT_CONF_VAR (max_cached_items, "max_cached_items", 10000);
   STR_CONF_VAR0 (username, "username");
   STR_CONF_VAR0 (password, "password");
   STR_CONF_VAR0 (access_token, "access_token");

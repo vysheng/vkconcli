@@ -10,49 +10,25 @@ EXTRA_LIBS=@EXTRA_LIBS@
 LOCAL_LDFLAGS=-lcurl -lm -ljansson -lsqlite3 ${EXTRA_LIBS}
 LINK_FLAGS=${LDFLAGS} ${LOCAL_LDFLAGS}
 
-HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/util_config.h ${srcdir}/src/util_tokenizer.h ${srcdir}/src/util_parser.h
-AUTOGEN_SRC= ${srcdir}/src/conf/messages.conf ${srcdir}/src/conf/users.conf
+HEADERS= ${srcdir}/src/structures.h ${srcdir}/src/net.h ${srcdir}/src/tree.h ${srcdir}/src/vk_errors.h ${srcdir}/src/md5.h structures-auto.h ${srcdir}/src/util_config.h ${srcdir}/src/util_tokenizer.h ${srcdir}/src/util_parser.h ${srcdir}/src/query.h ${srcdir}/src/util_io.h ${srcdir}/src/dectree.h ${srcdir}/src/cache.h ${srcdir}/src/vkconcli.h
+AUTOGEN_SRC= ${srcdir}/src/conf/users.conf
 INCLUDE=-I. -I${srcdir}/src/ -I${srcdir}
 CC=@CC@
-OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o util_config.o util_io.o util_tokenizer.o util_parser.o
+OBJECTS=main.o md5.o structures.o net.o tree.o structures-auto.o util_config.o util_io.o util_tokenizer.o util_parser.o query.o dectree.o cache.o
+VPATH=${srcdir}/src
 
 .SUFFIXES:
+
 .SUFFIXES: .c .h .o .py
 
 all: vkconcli
 
+${OBJECTS}: ${HEADERS}
 
 vkconcli: ${OBJECTS}
 	${CC} ${LINK_FLAGS} ${OBJECTS} -o $@
 
-main.o: ${srcdir}/src/main.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-net.o: ${srcdir}/src/net.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-tree.o: ${srcdir}/src/tree.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-md5.o: ${srcdir}/src/md5.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-structures.o: ${srcdir}/src/structures.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-structures-auto.o: structures-auto.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-util_config.o: ${srcdir}/src/util_config.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-util_io.o: ${srcdir}/src/util_io.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-util_tokenizer.o: ${srcdir}/src/util_tokenizer.c ${HEADERS}
-	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
-
-util_parser.o: ${srcdir}/src/util_parser.c ${HEADERS}
+.c.o :
 	${CC} ${COMPILE_FLAGS} ${INCLUDE} -c $< -o $@
 
 structures-auto.h: ${srcdir}/src/gen.py ${AUTOGEN_SRC}
@@ -60,7 +36,6 @@ structures-auto.h: ${srcdir}/src/gen.py ${AUTOGEN_SRC}
 
 structures-auto.c: ${srcdir}/src/gen.py ${AUTOGEN_SRC}
 	${srcdir}/src/gen.py c $@ ${AUTOGEN_SRC}
-
 
 
 clean:

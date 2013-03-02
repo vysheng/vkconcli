@@ -13,27 +13,6 @@
 #include <time.h>
 #include <curl/curl.h>
 
-struct message *vk_parse_message_longpoll (json_t *J) {
-  struct message *r = malloc (sizeof (*r));
-  r->id = json_integer_value (json_array_get (J, 1));
-  int flags = json_integer_value (json_array_get (J, 2));
-  r->uid = json_integer_value (json_array_get (J, 3));
-  r->date = json_integer_value (json_array_get (J, 4));
-  r->read_state = !(flags & 1);
-  r->out = (flags & 2) != 0;
-  r->title = strdup (json_string_value (json_array_get (J, 5)));
-  r->body = strdup (json_string_value (json_array_get (J, 6)));
-  r->chat_id = (flags & 16) ? -1 : 0;
-  r->deleted = (flags & 128) != 0;
-  r->emoji = 0;
-  json_t *t = json_array_get (J, 7);
-  if (t && json_object_get (t, "from") && (flags & 16)) {
-    r->chat_id = r->uid - 2000000000;
-    r->uid = atoi (json_string_value (json_object_get (t, "from")));
-  }
-  return r;
-}
-
 int line_pos;
 #define LINE_SIZE 100000
 static char line[LINE_SIZE + 1];

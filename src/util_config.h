@@ -27,5 +27,7 @@ extern int handle_count;
 
 extern int connections;
 
+extern int max_cached_items;
+
 void read_config (void);
 #endif

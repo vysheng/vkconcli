@@ -3,7 +3,7 @@
 
 #include <jansson.h>
 #include "structures-auto.h"
-
+#include "struct_message.h"
 
 void print_message (int level, const struct message *msg);
 void print_message_array (int num, struct message **msg, int reverse);
